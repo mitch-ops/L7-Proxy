@@ -3,6 +3,7 @@ use hyper::{Body, Client, Request, Response, Server, Uri};
 use hyper::service::{make_service_fn, service_fn};
 use std::convert::Infallible;
 use tracing::{info, error};
+use tokio::time::{timeout, Duration};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -47,31 +48,58 @@ async fn proxy_request(
         "Proxying request"
     );
 
-    // Build new URI pointing to upstream
     let new_uri = format!(
         "{}{}",
         upstream,
-        req.uri().path_and_query()
+        req.uri()
+            .path_and_query()
             .map(|x| x.as_str())
             .unwrap_or("/")
     );
 
-    *req.uri_mut() = new_uri.parse::<Uri>().unwrap();
-
-    match client.request(req).await {
-        Ok(res) => {
-            info!("Upstream responded with {}", res.status());
-            Ok(res)
+    match new_uri.parse::<Uri>() {
+        Ok(parsed) => {
+            *req.uri_mut() = parsed;
         }
-        Err(err) => {
-            error!("Upstream error: {:?}", err);
+        Err(_) => {
+            return Ok(
+                Response::builder()
+                    .status(500)
+                    .body(Body::from("Invalid upstream URI"))
+                    .unwrap()
+            );
+        }
+    }
 
-            let response = Response::builder()
-                .status(502)
-                .body(Body::from("Bad Gateway"))
-                .unwrap();
+    // 5 second timeout
+    let upstream_call = client.request(req);
 
-            Ok(response)
+    match timeout(Duration::from_secs(5), upstream_call).await {
+        Ok(result) => {
+            match result {
+                Ok(response) => {
+                    info!("Upstream responded with {}", response.status());
+                    Ok(response)
+                }
+                Err(e) => {
+                    error!("Upstream connection error: {:?}", e);
+                    Ok(
+                        Response::builder()
+                            .status(502)
+                            .body(Body::from("Bad Gateway"))
+                            .unwrap()
+                    )
+                }
+            }
+        }
+        Err(_) => {
+            error!("Upstream request timed out");
+            Ok(
+                Response::builder()
+                    .status(504)
+                    .body(Body::from("Gateway Timeout"))
+                    .unwrap()
+            )
         }
     }
 }
