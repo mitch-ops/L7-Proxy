@@ -1,0 +1,71 @@
+use hyper::{Body, Request, Response, Uri};
+use std::convert::Infallible;
+use tracing::{info, error};
+use tokio::time::{timeout, Duration};
+use crate::state::AppState;
+
+pub async fn proxy_request(
+    mut req: Request<Body>,
+    state: AppState,
+) -> Result<Response<Body>, Infallible> {
+
+    info!(
+        method = ?req.method(),
+        path = ?req.uri().path(),
+        "Proxying request"
+    );
+
+    let new_uri = format!(
+        "{}{}",
+        state.upstream_base,
+        req.uri()
+            .path_and_query()
+            .map(|x| x.as_str())
+            .unwrap_or("/")
+    );
+
+    match new_uri.parse::<Uri>() {
+        Ok(parsed) => {
+            *req.uri_mut() = parsed;
+        }
+        Err(_) => {
+            return Ok(
+                Response::builder()
+                    .status(500)
+                    .body(Body::from("Invalid upstream URI"))
+                    .unwrap()
+            );
+        }
+    }
+
+    let upstream_call = state.client.request(req);
+
+    match timeout(Duration::from_secs(5), upstream_call).await {
+        Ok(result) => {
+            match result {
+                Ok(response) => {
+                    info!("Upstream responded with {}", response.status());
+                    Ok(response)
+                }
+                Err(e) => {
+                    error!("Upstream connection error: {:?}", e);
+                    Ok(
+                        Response::builder()
+                            .status(502)
+                            .body(Body::from("Bad Gateway"))
+                            .unwrap()
+                    )
+                }
+            }
+        }
+        Err(_) => {
+            error!("Upstream request timed out");
+            Ok(
+                Response::builder()
+                    .status(504)
+                    .body(Body::from("Gateway Timeout"))
+                    .unwrap()
+            )
+        }
+    }
+}
