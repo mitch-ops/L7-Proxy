@@ -1,18 +1,22 @@
 use crate::state::AppState;
+use hyper::header::HeaderName;
 use hyper::{Body, Request, Response, Uri};
 use std::{convert::Infallible, sync::Arc};
 use tokio::time::{Duration, timeout};
 use tracing::{error, info};
+use uuid::Uuid;
 
 pub async fn proxy_request(
     mut req: Request<Body>,
     state: Arc<AppState>,
 ) -> Result<Response<Body>, Infallible> {
     let path = req.uri().path();
+    let request_id = uuid::Uuid::new_v4().to_string();
 
     info!(
+        request_id = %request_id,
         method = ?req.method(),
-        path = ?path,
+        path = ?req.uri().path(),
         "Proxying request"
     );
 
@@ -58,17 +62,30 @@ pub async fn proxy_request(
         }
     }
 
+    req.headers_mut().insert(
+        HeaderName::from_static("x-request-id"),
+        request_id.parse().unwrap(),
+    );
+
     // Forward request
     let upstream_call = state.client.request(req);
 
     match timeout(Duration::from_secs(5), upstream_call).await {
         Ok(result) => match result {
             Ok(response) => {
-                info!("Upstream responded with {}", response.status());
+                info!(
+                    request_id = %request_id,
+                    status = %response.status(),
+                    "Upstream responded"
+                );
                 Ok(response)
             }
             Err(e) => {
-                error!("Upstream connection error: {:?}", e);
+                error!(
+                    request_id = %request_id,
+                    error = ?e,
+                    "Upstream connection error"
+                );
                 Ok(Response::builder()
                     .status(502)
                     .body(Body::from("Bad Gateway"))
@@ -76,7 +93,10 @@ pub async fn proxy_request(
             }
         },
         Err(_) => {
-            error!("Upstream request timed out");
+            error!(
+                request_id = %request_id,
+                "Upstream request timed out"
+            );
             Ok(Response::builder()
                 .status(504)
                 .body(Body::from("Gateway Timeout"))
