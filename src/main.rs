@@ -1,20 +1,26 @@
 mod state;
 mod proxy;
+mod config;
 
 use hyper::client::HttpConnector;
 use hyper::{Body, Client, Server};
 use hyper::service::{make_service_fn, service_fn};
 use std::convert::Infallible;
 use tracing::{info};
+use std::fs;
+use config::Config;
 
 use crate::state::AppState;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initilize structured logging
     tracing_subscriber::fmt::init();
 
-    let addr = ([127, 0, 0, 1], 8080).into();
+    // let addr = ([127, 0, 0, 1], 8080).into();
+    let config_str = fs::read_to_string("config.yaml")?;
+    let config: Config = serde_yaml::from_str(&config_str)?;
+
+    let addr: std::net::SocketAddr = config.server.bind.parse()?;
 
     info!("Starting HTTP server on {}", addr);
 
@@ -24,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client: Client<HttpConnector, Body> = Client::new();
 
     let state = AppState {
-        upstream_base: "http://localhost:3000".to_string(),
+        upstream_base: config.upstream.base_url.clone(),
         client,
     };
 
