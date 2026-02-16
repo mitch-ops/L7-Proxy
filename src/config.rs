@@ -6,13 +6,14 @@ pub struct ServerConfig {
     pub request_timeout_secs: u64,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct UpstreamConfig {
-    pub base_url: String,
+#[derive(Debug, Deserialize, Clone)]
+pub struct RouteConfig {
+    pub prefix: String,
+    pub upstream: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub server: ServerConfig,
-    pub upstream: UpstreamConfig,
+    pub routes: Vec<RouteConfig>,
 }

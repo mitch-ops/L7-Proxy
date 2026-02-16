@@ -1,23 +1,39 @@
 use hyper::{Body, Request, Response, Uri};
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::Arc};
 use tracing::{info, error};
 use tokio::time::{timeout, Duration};
 use crate::state::AppState;
 
 pub async fn proxy_request(
     mut req: Request<Body>,
-    state: AppState,
+    state: Arc<AppState>,
 ) -> Result<Response<Body>, Infallible> {
+
+    let path = req.uri().path();
 
     info!(
         method = ?req.method(),
-        path = ?req.uri().path(),
+        path = ?path,
         "Proxying request"
     );
 
+    // Match route
+    let route = match state.router.match_route(path) {
+        Some(route) => route,
+        None => {
+            return Ok(
+                Response::builder()
+                    .status(404)
+                    .body(Body::from("No matching route"))
+                    .unwrap()
+            );
+        }
+    };
+
+    // Build upstream URI
     let new_uri = format!(
         "{}{}",
-        state.upstream_base,
+        route.upstream,
         req.uri()
             .path_and_query()
             .map(|x| x.as_str())
@@ -38,6 +54,7 @@ pub async fn proxy_request(
         }
     }
 
+    // Forward request
     let upstream_call = state.client.request(req);
 
     match timeout(Duration::from_secs(5), upstream_call).await {

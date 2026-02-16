@@ -1,6 +1,7 @@
 mod state;
 mod proxy;
 mod config;
+mod router;
 
 use hyper::client::HttpConnector;
 use hyper::{Body, Client, Server};
@@ -9,6 +10,8 @@ use std::convert::Infallible;
 use tracing::{info};
 use std::fs;
 use config::Config;
+use router::{Route, Router};
+use std::sync::Arc;
 
 use crate::state::AppState;
 
@@ -22,6 +25,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr: std::net::SocketAddr = config.server.bind.parse()?;
 
+    let routes = config.routes
+        .iter()
+        .map(|r| Route {
+            prefix: r.prefix.clone(),
+            upstream: r.upstream.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let router = Arc::new(Router::new(routes));
+
     info!("Starting HTTP server on {}", addr);
 
 //    let listener = TcpListener::bind(addr).await?;
@@ -29,10 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Hyper client with conneciton pooling built in
     let client: Client<HttpConnector, Body> = Client::new();
 
-    let state = AppState {
-        upstream_base: config.upstream.base_url.clone(),
+    let state = Arc::new(AppState {
+        router,
         client,
-    };
+    });
 
     let make_svc = make_service_fn(move |_conn| {
         let state = state.clone();
