@@ -48,7 +48,10 @@ pub async fn proxy_request(
         stripped_path
     };
 
-    let new_uri = format!("{}{}", route.upstream, final_path);
+    let index = route.balancer.next_index(route.upstreams.len());
+    let selected_upstream = &route.upstreams[index];
+
+    let new_uri = format!("{}{}", selected_upstream, final_path);
 
     match new_uri.parse::<Uri>() {
         Ok(parsed) => {

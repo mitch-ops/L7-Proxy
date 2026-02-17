@@ -9,7 +9,7 @@ pub struct ServerConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct RouteConfig {
     pub prefix: String,
-    pub upstream: String,
+    pub upstream: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -2,6 +2,7 @@ mod state;
 mod proxy;
 mod config;
 mod router;
+mod balancer;
 
 use hyper::client::HttpConnector;
 use hyper::{Body, Client, Server};
@@ -12,6 +13,7 @@ use std::fs;
 use config::Config;
 use router::{Route, Router};
 use std::sync::Arc;
+use balancer::RoundRobin;
 
 use crate::state::AppState;
 
@@ -29,7 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|r| Route {
             prefix: r.prefix.clone(),
-            upstream: r.upstream.clone(),
+            upstreams: r.upstream.clone(),
+            balancer: RoundRobin::new(),
         })
         .collect::<Vec<_>>();
 

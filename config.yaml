@@ -4,6 +4,10 @@ server:
 
 routes:
   - prefix: "/api"
-    upstream: "http://127.0.0.1:9001"
+    upstream:
+      - "http://127.0.0.1:9001"
+      - "http://127.0.0.1:9002"
   - prefix: "/admin"
-    upstream: "http://127.0.0.1:9002"
+    upstream:
+      - "http://127.0.0.1:9010"
+      - "http://127.0.0.1:9011"
