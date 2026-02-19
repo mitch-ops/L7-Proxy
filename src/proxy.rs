@@ -5,11 +5,12 @@ use std::{convert::Infallible, sync::Arc};
 use tokio::time::{Duration, timeout};
 use tracing::{error, info};
 use uuid::Uuid;
+use crate::errors::ProxyError;
 
 pub async fn proxy_request(
     mut req: Request<Body>,
     state: Arc<AppState>,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<Body>, ProxyError> {
     let path = req.uri().path();
     let request_id = uuid::Uuid::new_v4().to_string();
 
@@ -73,37 +74,64 @@ pub async fn proxy_request(
     // Forward request
     let upstream_call = state.client.request(req);
 
-    match timeout(Duration::from_secs(5), upstream_call).await {
-        Ok(result) => match result {
-            Ok(response) => {
-                info!(
-                    request_id = %request_id,
-                    status = %response.status(),
-                    "Upstream responded"
-                );
-                Ok(response)
-            }
-            Err(e) => {
-                error!(
-                    request_id = %request_id,
-                    error = ?e,
-                    "Upstream connection error"
-                );
-                Ok(Response::builder()
-                    .status(502)
-                    .body(Body::from("Bad Gateway"))
-                    .unwrap())
-            }
-        },
+    // match timeout(Duration::from_secs(5), upstream_call).await {
+    //     Ok(result) => match result {
+    //         Ok(response) => {
+    //             info!(
+    //                 request_id = %request_id,
+    //                 status = %response.status(),
+    //                 "Upstream responded"
+    //             );
+    //             Ok(response)
+    //         }
+    //         Err(e) => {
+    //             error!(
+    //                 request_id = %request_id,
+    //                 error = ?e,
+    //                 "Upstream connection error"
+    //             );
+    //             Ok(Response::builder()
+    //                 .status(502)
+    //                 .body(Body::from("Bad Gateway"))
+    //                 .unwrap())
+    //         }
+    //     },
+    //     Err(_) => {
+    //         error!(
+    //             request_id = %request_id,
+    //             "Upstream request timed out"
+    //         );
+    //         Ok(Response::builder()
+    //             .status(504)
+    //             .body(Body::from("Gateway Timeout"))
+    //             .unwrap())
+    //     }
+    // }
+    let response = match timeout(Duration::from_secs(5), upstream_call).await {
+        Ok(Ok(resp)) => {
+            info!(
+                request_id = %request_id,
+                status = %resp.status(),
+                "Upstream responded"
+            );
+            resp
+        }
+        Ok(Err(e)) => {
+            error!(
+                request_id = %request_id,
+                error = ?e,
+                "Upstream connection error"
+            );
+            return Err(ProxyError::UpstreamFailure);
+        }
         Err(_) => {
             error!(
                 request_id = %request_id,
                 "Upstream request timed out"
             );
-            Ok(Response::builder()
-                .status(504)
-                .body(Body::from("Gateway Timeout"))
-                .unwrap())
+            return Err(ProxyError::UpstreamTimeout);
         }
-    }
+    };
+
+    Ok(response)
 }

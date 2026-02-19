@@ -1,19 +1,20 @@
-mod state;
-mod proxy;
-mod config;
-mod router;
 mod balancer;
+mod config;
+mod errors;
+mod proxy;
+mod router;
+mod state;
 
-use hyper::client::HttpConnector;
-use hyper::{Body, Client, Server};
-use hyper::service::{make_service_fn, service_fn};
-use std::convert::Infallible;
-use tracing::{info};
-use std::fs;
-use config::Config;
-use router::{Route, Router};
-use std::sync::Arc;
 use balancer::RoundRobin;
+use config::Config;
+use hyper::client::HttpConnector;
+use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Client, Server};
+use router::{Route, Router};
+use std::convert::Infallible;
+use std::fs;
+use std::sync::Arc;
+use tracing::info;
 
 use crate::state::AppState;
 
@@ -27,7 +28,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr: std::net::SocketAddr = config.server.bind.parse()?;
 
-    let routes = config.routes
+    let routes = config
+        .routes
         .iter()
         .map(|r| Route {
             prefix: r.prefix.clone(),
@@ -40,22 +42,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting HTTP server on {}", addr);
 
-//    let listener = TcpListener::bind(addr).await?;
-    
+    //    let listener = TcpListener::bind(addr).await?;
+
     // Hyper client with conneciton pooling built in
     let client: Client<HttpConnector, Body> = Client::new();
 
-    let state = Arc::new(AppState {
-        router,
-        client,
-    });
+    let state = Arc::new(AppState { router, client });
 
     let make_svc = make_service_fn(move |_conn| {
         let state = state.clone();
 
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
-                proxy::proxy_request(req, state.clone())
+                let state = state.clone();
+                async move {
+                    match proxy::proxy_request(req, state).await {
+                        Ok(resp) => Ok::<_, Infallible>(resp),
+                        Err(err) => Ok(err.into_response()),
+                    }
+                }
             }))
         }
     });
