@@ -1,3 +1,5 @@
+use crate::config;
+use crate::errors::ProxyError;
 use crate::state::AppState;
 use hyper::header::HeaderName;
 use hyper::{Body, Request, Response, Uri};
@@ -5,13 +7,60 @@ use std::{convert::Infallible, sync::Arc};
 use tokio::time::{Duration, timeout};
 use tracing::{error, info};
 use uuid::Uuid;
-use crate::errors::ProxyError;
+
+/**
+ * Core proxy logic:
+ * - Match route
+ * - Build upstream URI
+ * - Forward request
+ * - Handle response
+ * - Retry logic
+ */
+
+/**
+ * Forward request to upstream and return response. Returns ProxyError on failure or timeout.
+ * No cloning
+ * takes ownership of req, so we can modify it without cloning.
+ */
+async fn forward_once(
+    mut req: Request<Body>,
+    upstream: &str,
+    final_path: &str,
+    request_id: &str,
+    state: &AppState,
+) -> Result<Response<Body>, ProxyError> {
+    let new_uri = format!("{}{}", upstream, final_path);
+
+    let parsed = new_uri
+        .parse::<Uri>()
+        .map_err(|_| ProxyError::UpstreamFailure)?;
+
+    *req.uri_mut() = parsed;
+
+    req.headers_mut().insert(
+        HeaderName::from_static("x-request-id"),
+        request_id.parse().unwrap(),
+    );
+
+    let upstream_call = state.client.request(req);
+
+    match timeout(
+        Duration::from_secs(state.config.server.request_timeout_secs),
+        upstream_call,
+    )
+    .await
+    {
+        Ok(Ok(resp)) => Ok(resp),
+        Ok(Err(_)) => Err(ProxyError::UpstreamFailure),
+        Err(_) => Err(ProxyError::UpstreamTimeout),
+    }
+}
 
 pub async fn proxy_request(
-    mut req: Request<Body>,
+    req: Request<Body>,
     state: Arc<AppState>,
 ) -> Result<Response<Body>, ProxyError> {
-    let path = req.uri().path();
+    let path = req.uri().path().to_string();
     let request_id = uuid::Uuid::new_v4().to_string();
 
     info!(
@@ -22,7 +71,7 @@ pub async fn proxy_request(
     );
 
     // Match route
-    let route = match state.router.match_route(path) {
+    let route = match state.router.match_route(&path) {
         Some(route) => route,
         None => {
             return Ok(Response::builder()
@@ -36,102 +85,61 @@ pub async fn proxy_request(
     let original_path = req
         .uri()
         .path_and_query()
-        .map(|x| x.as_str())
-        .unwrap_or("/");
+        .map(|x| x.as_str().to_string())
+        .unwrap_or_else(|| "/".to_string());
 
     let stripped_path = original_path
         .strip_prefix(&route.prefix)
-        .unwrap_or(original_path);
+        .unwrap_or(&original_path)
+        .to_string();
 
     let final_path = if stripped_path.is_empty() {
-        "/"
+        "/".to_string()
     } else {
         stripped_path
     };
 
-    let index = route.balancer.next_index(route.upstreams.len());
-    let selected_upstream = &route.upstreams[index];
+    let max_retries = state.config.server.max_retries;
+    let upstream_count = route.upstreams.len();
 
-    let new_uri = format!("{}{}", selected_upstream, final_path);
+    let method = req.method().clone();
+    let headers = req.headers().clone();
+    let whole_body = hyper::body::to_bytes(req.into_body())
+        .await
+        .map_err(|_| ProxyError::UpstreamFailure)?;
 
-    match new_uri.parse::<Uri>() {
-        Ok(parsed) => {
-            *req.uri_mut() = parsed;
-        }
-        Err(_) => {
-            return Ok(Response::builder()
-                .status(500)
-                .body(Body::from("Invalid upstream URI"))
-                .unwrap());
+    let mut last_error = None;
+
+    for attempt in 0..=max_retries.min(upstream_count - 1) {
+        let index = route.balancer.next_index(upstream_count);
+        let selected_upstream = &route.upstreams[index];
+
+        info!(
+            request_id = %request_id,
+            attempt = attempt,
+            upstream = selected_upstream,
+            "Attempting upstream"
+        );
+
+        let mut new_req = Request::builder()
+            .method(method.clone())
+            .uri("/") // placeholder, will be replaced in forward_once
+            .body(Body::from(whole_body.clone()))
+            .unwrap();
+
+        *new_req.headers_mut() = headers.clone();
+
+        match forward_once(new_req, selected_upstream, &final_path, &request_id, &state).await {
+            Ok(resp) => return Ok(resp),
+
+            Err(e @ ProxyError::UpstreamFailure) | Err(e @ ProxyError::UpstreamTimeout) => {
+                last_error = Some(e);
+                continue;
+            }
+
+            Err(e) => return Err(e),
         }
     }
 
-    req.headers_mut().insert(
-        HeaderName::from_static("x-request-id"),
-        request_id.parse().unwrap(),
-    );
-
-    // Forward request
-    let upstream_call = state.client.request(req);
-
-    // match timeout(Duration::from_secs(5), upstream_call).await {
-    //     Ok(result) => match result {
-    //         Ok(response) => {
-    //             info!(
-    //                 request_id = %request_id,
-    //                 status = %response.status(),
-    //                 "Upstream responded"
-    //             );
-    //             Ok(response)
-    //         }
-    //         Err(e) => {
-    //             error!(
-    //                 request_id = %request_id,
-    //                 error = ?e,
-    //                 "Upstream connection error"
-    //             );
-    //             Ok(Response::builder()
-    //                 .status(502)
-    //                 .body(Body::from("Bad Gateway"))
-    //                 .unwrap())
-    //         }
-    //     },
-    //     Err(_) => {
-    //         error!(
-    //             request_id = %request_id,
-    //             "Upstream request timed out"
-    //         );
-    //         Ok(Response::builder()
-    //             .status(504)
-    //             .body(Body::from("Gateway Timeout"))
-    //             .unwrap())
-    //     }
-    // }
-    let response = match timeout(Duration::from_secs(5), upstream_call).await {
-        Ok(Ok(resp)) => {
-            info!(
-                request_id = %request_id,
-                status = %resp.status(),
-                "Upstream responded"
-            );
-            resp
-        }
-        Ok(Err(e)) => {
-            error!(
-                request_id = %request_id,
-                error = ?e,
-                "Upstream connection error"
-            );
-            return Err(ProxyError::UpstreamFailure);
-        }
-        Err(_) => {
-            error!(
-                request_id = %request_id,
-                "Upstream request timed out"
-            );
-            return Err(ProxyError::UpstreamTimeout);
-        }
-    };
-
-    Ok(response)
+    Err(last_error.unwrap_or(ProxyError::UpstreamFailure))
 }

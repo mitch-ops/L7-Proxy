@@ -25,6 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let addr = ([127, 0, 0, 1], 8080).into();
     let config_str = fs::read_to_string("config.yaml")?;
     let config: Config = serde_yaml::from_str(&config_str)?;
+    let config = Arc::new(config);
 
     let addr: std::net::SocketAddr = config.server.bind.parse()?;
 
@@ -47,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Hyper client with conneciton pooling built in
     let client: Client<HttpConnector, Body> = Client::new();
 
-    let state = Arc::new(AppState { router, client });
+    let state = Arc::new(AppState { router, client, config });
 
     let make_svc = make_service_fn(move |_conn| {
         let state = state.clone();
