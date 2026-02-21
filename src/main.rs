@@ -4,6 +4,7 @@ mod errors;
 mod proxy;
 mod router;
 mod state;
+mod server;
 
 use balancer::RoundRobin;
 use config::Config;
@@ -15,6 +16,7 @@ use std::convert::Infallible;
 use std::fs;
 use std::sync::Arc;
 use tracing::info;
+use crate::server::start_server;
 
 use crate::state::AppState;
 
@@ -50,25 +52,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = Arc::new(AppState { router, client, config });
 
-    let make_svc = make_service_fn(move |_conn| {
-        let state = state.clone();
+    // let make_svc = make_service_fn(move |_conn| {
+    //     let state = state.clone();
 
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req| {
-                let state = state.clone();
-                async move {
-                    match proxy::proxy_request(req, state).await {
-                        Ok(resp) => Ok::<_, Infallible>(resp),
-                        Err(err) => Ok(err.into_response()),
-                    }
-                }
-            }))
-        }
-    });
+    //     async move {
+    //         Ok::<_, Infallible>(service_fn(move |req| {
+    //             let state = state.clone();
+    //             async move {
+    //                 match proxy::proxy_request(req, state).await {
+    //                     Ok(resp) => Ok::<_, Infallible>(resp),
+    //                     Err(err) => Ok(err.into_response()),
+    //                 }
+    //             }
+    //         }))
+    //     }
+    // });
 
-    let server = Server::bind(&addr).serve(make_svc);
+    // let server = Server::bind(&addr).serve(make_svc);
 
-    server.await?;
+    // server.await?;
+
+    start_server(state, addr).await;
 
     Ok(())
 }
