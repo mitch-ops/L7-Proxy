@@ -109,9 +109,11 @@ pub async fn proxy_request(
         .map_err(|_| ProxyError::UpstreamFailure)?;
 
     let mut last_error = None;
+    let start_index = route.balancer.next_index(upstream_count);
 
     for attempt in 0..=max_retries.min(upstream_count - 1) {
-        let index = route.balancer.next_index(upstream_count);
+        // let index = route.balancer.next_index(upstream_count);
+        let index = (start_index + attempt) % upstream_count;
         let selected_upstream = &route.upstreams[index];
 
         info!(
@@ -130,7 +132,13 @@ pub async fn proxy_request(
         *new_req.headers_mut() = headers.clone();
 
         match forward_once(new_req, selected_upstream, &final_path, &request_id, &state).await {
-            Ok(resp) => return Ok(resp),
+            Ok(resp) => {
+                if resp.status().is_server_error() {
+                    last_error = Some(ProxyError::UpstreamFailure);
+                    continue;
+                }
+                return Ok(resp);
+            }
 
             Err(e @ ProxyError::UpstreamFailure) | Err(e @ ProxyError::UpstreamTimeout) => {
                 last_error = Some(e);

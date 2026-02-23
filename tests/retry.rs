@@ -4,6 +4,7 @@ use axum::{Router, routing::get};
 use axum::response::IntoResponse;
 use axum::http::{StatusCode, request};
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::task;
 
 async fn fail_handler() -> impl IntoResponse {
@@ -35,20 +36,18 @@ async fn proxy_retries_and_succeeds() {
     task::spawn(failing_upstream());
     task::spawn(healthy_upstream());
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
-    task::spawn(async {
-        start_proxy_for_test().await;
-    });
+    let proxy_addr = start_proxy_for_test().await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let response = reqwest::get("http://127.0.0.1:8080/")
+    let response = reqwest::get(format!("http://{}", proxy_addr))
         .await
         .unwrap();
 
     assert_eq!(response.status(), 200);
 
-    let body: String = response.text().await.unwrap();
+    let body = response.text().await.unwrap();
     assert_eq!(body, "success");
 }

@@ -52,27 +52,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = Arc::new(AppState { router, client, config });
 
-    // let make_svc = make_service_fn(move |_conn| {
-    //     let state = state.clone();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    //     async move {
-    //         Ok::<_, Infallible>(service_fn(move |req| {
-    //             let state = state.clone();
-    //             async move {
-    //                 match proxy::proxy_request(req, state).await {
-    //                     Ok(resp) => Ok::<_, Infallible>(resp),
-    //                     Err(err) => Ok(err.into_response()),
-    //                 }
-    //             }
-    //         }))
-    //     }
-    // });
-
-    // let server = Server::bind(&addr).serve(make_svc);
-
-    // server.await?;
-
-    start_server(state, addr).await;
+    start_server(state, listener).await;
 
     Ok(())
 }
