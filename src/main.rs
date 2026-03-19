@@ -1,6 +1,7 @@
 mod balancer;
 mod config;
 mod errors;
+mod health;
 mod proxy;
 mod router;
 mod state;
@@ -50,7 +51,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Hyper client with conneciton pooling built in
     let client: Client<HttpConnector, Body> = Client::new();
 
-    let state = Arc::new(AppState { router, client, config });
+    let health = Arc::new(health::HealthTracker::new(
+        config.server.failure_threshold,
+        std::time::Duration::from_secs(config.server.health_cooldown_secs),
+    ));
+
+    let state = Arc::new(AppState { router, client, config, health });
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
 

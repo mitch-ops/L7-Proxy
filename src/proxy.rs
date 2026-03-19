@@ -111,14 +111,35 @@ pub async fn proxy_request(
     let mut last_error = None;
     let start_index = route.balancer.next_index(upstream_count);
 
-    for attempt in 0..=max_retries.min(upstream_count - 1) {
-        // let index = route.balancer.next_index(upstream_count);
-        let index = (start_index + attempt) % upstream_count;
+    // If all upstreams are unhealthy, ignore health status (fallback to current behavior)
+    let any_healthy = route.upstreams.iter().any(|u| state.health.is_healthy(u));
+
+    let max_attempts = max_retries + 1;
+    let mut attempts_made = 0;
+
+    for offset in 0..upstream_count {
+        if attempts_made >= max_attempts {
+            break;
+        }
+
+        let index = (start_index + offset) % upstream_count;
         let selected_upstream = &route.upstreams[index];
+
+        // Skip unhealthy upstreams (unless all are unhealthy)
+        if any_healthy && !state.health.is_healthy(selected_upstream) {
+            info!(
+                request_id = %request_id,
+                upstream = selected_upstream,
+                "Skipping unhealthy upstream"
+            );
+            continue;
+        }
+
+        attempts_made += 1;
 
         info!(
             request_id = %request_id,
-            attempt = attempt,
+            attempt = attempts_made,
             upstream = selected_upstream,
             "Attempting upstream"
         );
@@ -134,13 +155,16 @@ pub async fn proxy_request(
         match forward_once(new_req, selected_upstream, &final_path, &request_id, &state).await {
             Ok(resp) => {
                 if resp.status().is_server_error() {
+                    state.health.record_failure(selected_upstream);
                     last_error = Some(ProxyError::UpstreamFailure);
                     continue;
                 }
+                state.health.record_success(selected_upstream);
                 return Ok(resp);
             }
 
             Err(e @ ProxyError::UpstreamFailure) | Err(e @ ProxyError::UpstreamTimeout) => {
+                state.health.record_failure(selected_upstream);
                 last_error = Some(e);
                 continue;
             }

@@ -5,3 +5,4 @@ pub mod config;
 pub mod router;
 pub mod balancer;
 pub mod errors;
+pub mod health;

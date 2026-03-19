@@ -26,6 +26,8 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
             bind: "127.0.0.1:8080".to_string(),
             request_timeout_secs: 2,
             max_retries: 5,
+            failure_threshold: 3,
+            health_cooldown_secs: 30,
         },
         routes: vec![crate::config::RouteConfig {
             prefix: "/".to_string(),
@@ -36,6 +38,10 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
         }],
     };
 
+    start_proxy_with_config(config).await
+}
+
+pub async fn start_proxy_with_config(config: Config) -> std::net::SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .unwrap();
@@ -55,10 +61,16 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
     let router = Arc::new(crate::router::Router::new(routes));
     let client = hyper::Client::new();
 
+    let health = Arc::new(crate::health::HealthTracker::new(
+        config.server.failure_threshold,
+        std::time::Duration::from_secs(config.server.health_cooldown_secs),
+    ));
+
     let state = Arc::new(AppState {
         router,
         client,
         config: Arc::new(config),
+        health,
     });
 
     tokio::spawn(async move {
