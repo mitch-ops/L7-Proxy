@@ -28,6 +28,7 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
             max_retries: 5,
             failure_threshold: 3,
             health_cooldown_secs: 30,
+            health_check: None,
         },
         routes: vec![crate::config::RouteConfig {
             prefix: "/".to_string(),
@@ -72,6 +73,8 @@ pub async fn start_proxy_with_config(config: Config) -> std::net::SocketAddr {
         config: Arc::new(config),
         health,
     });
+
+    crate::health_check::spawn_active_health_checker(state.clone());
 
     tokio::spawn(async move {
         start_server(state, listener).await;

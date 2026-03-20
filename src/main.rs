@@ -2,6 +2,7 @@ mod balancer;
 mod config;
 mod errors;
 mod health;
+mod health_check;
 mod proxy;
 mod router;
 mod state;
@@ -59,6 +60,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState { router, client, config, health });
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    health_check::spawn_active_health_checker(state.clone());
 
     start_server(state, listener).await;
 

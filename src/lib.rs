@@ -6,3 +6,4 @@ pub mod router;
 pub mod balancer;
 pub mod errors;
 pub mod health;
+pub mod health_check;

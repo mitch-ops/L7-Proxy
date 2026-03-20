@@ -32,6 +32,7 @@ impl HealthTracker {
         entry.consecutive_failures += 1;
 
         if entry.consecutive_failures >= self.failure_threshold {
+            entry.consecutive_failures = self.failure_threshold; // cap to prevent unbounded growth
             entry.marked_unhealthy_at = Some(Instant::now());
         }
     }
