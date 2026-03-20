@@ -6,6 +6,7 @@ mod health_check;
 mod proxy;
 mod router;
 mod state;
+mod retry_budget;
 mod server;
 
 use balancer::RoundRobin;
@@ -57,7 +58,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::time::Duration::from_secs(config.server.health_cooldown_secs),
     ));
 
-    let state = Arc::new(AppState { router, client, config, health });
+    let retry_budget = Arc::new(retry_budget::RetryBudget::new(
+        config.server.retry_budget_percent,
+        config.server.retry_budget_window_secs,
+    ));
+
+    let state = Arc::new(AppState { router, client, config, health, retry_budget });
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
 

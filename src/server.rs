@@ -10,7 +10,17 @@ use crate::{proxy::proxy_request, state::AppState};
 pub async fn start_server(state: Arc<AppState>, listener: tokio::net::TcpListener,) {
     let make_svc = make_service_fn(move |_| {
         let state = state.clone();
-        async move { Ok::<_, Infallible>(service_fn(move |req| proxy_request(req, state.clone()))) }
+        async move {
+            Ok::<_, Infallible>(service_fn(move |req| {
+                let state = state.clone();
+                async move {
+                    match proxy_request(req, state).await {
+                        Ok(resp) => Ok::<_, Infallible>(resp),
+                        Err(e) => Ok(e.into_response()),
+                    }
+                }
+            }))
+        }
     });
 
     hyper::Server::from_tcp(listener.into_std().unwrap())
@@ -29,6 +39,9 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
             failure_threshold: 3,
             health_cooldown_secs: 30,
             health_check: None,
+            retry_backoff_ms: 10,
+            retry_budget_percent: 20.0,
+            retry_budget_window_secs: 10,
         },
         routes: vec![crate::config::RouteConfig {
             prefix: "/".to_string(),
@@ -67,11 +80,17 @@ pub async fn start_proxy_with_config(config: Config) -> std::net::SocketAddr {
         std::time::Duration::from_secs(config.server.health_cooldown_secs),
     ));
 
+    let retry_budget = Arc::new(crate::retry_budget::RetryBudget::new(
+        config.server.retry_budget_percent,
+        config.server.retry_budget_window_secs,
+    ));
+
     let state = Arc::new(AppState {
         router,
         client,
         config: Arc::new(config),
         health,
+        retry_budget,
     });
 
     crate::health_check::spawn_active_health_checker(state.clone());

@@ -10,6 +10,12 @@ pub struct ServerConfig {
     #[serde(default = "default_health_cooldown_secs")]
     pub health_cooldown_secs: u64,
     pub health_check: Option<HealthCheckConfig>,
+    #[serde(default = "default_retry_backoff_ms")]
+    pub retry_backoff_ms: u64,
+    #[serde(default = "default_retry_budget_percent")]
+    pub retry_budget_percent: f64,
+    #[serde(default = "default_retry_budget_window_secs")]
+    pub retry_budget_window_secs: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -40,6 +46,18 @@ fn default_health_check_interval() -> u64 {
 
 fn default_health_check_timeout() -> u64 {
     3
+}
+
+fn default_retry_backoff_ms() -> u64 {
+    100
+}
+
+fn default_retry_budget_percent() -> f64 {
+    20.0
+}
+
+fn default_retry_budget_window_secs() -> u64 {
+    10
 }
 
 #[derive(Debug, Deserialize, Clone)]

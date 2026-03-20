@@ -52,6 +52,9 @@ async fn unhealthy_upstream_is_skipped() {
             failure_threshold: 1, // Mark unhealthy after 1 failure
             health_cooldown_secs: 60,
             health_check: None,
+            retry_backoff_ms: 10,
+            retry_budget_percent: 100.0,
+            retry_budget_window_secs: 10,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
@@ -142,6 +145,9 @@ async fn active_health_check_marks_upstream_unhealthy() {
                 interval_secs: 1,
                 timeout_secs: 1,
             }),
+            retry_backoff_ms: 10,
+            retry_budget_percent: 100.0,
+            retry_budget_window_secs: 10,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),

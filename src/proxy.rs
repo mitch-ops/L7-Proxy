@@ -1,12 +1,11 @@
-use crate::config;
 use crate::errors::ProxyError;
 use crate::state::AppState;
 use hyper::header::HeaderName;
 use hyper::{Body, Request, Response, Uri};
-use std::{convert::Infallible, sync::Arc};
-use tokio::time::{Duration, timeout};
-use tracing::{error, info};
-use uuid::Uuid;
+use rand::RngExt;
+use std::sync::Arc;
+use tokio::time::{Duration, sleep, timeout};
+use tracing::info;
 
 /**
  * Core proxy logic:
@@ -116,6 +115,10 @@ pub async fn proxy_request(
 
     let max_attempts = max_retries + 1;
     let mut attempts_made = 0;
+    let backoff_base_ms = state.config.server.retry_backoff_ms;
+
+    // Record this request for retry budget tracking
+    state.retry_budget.record_request();
 
     for offset in 0..upstream_count {
         if attempts_made >= max_attempts {
@@ -133,6 +136,30 @@ pub async fn proxy_request(
                 "Skipping unhealthy upstream"
             );
             continue;
+        }
+
+        // For retries (not the first attempt), check budget and apply backoff
+        if attempts_made > 0 {
+            if !state.retry_budget.allow_retry() {
+                info!(
+                    request_id = %request_id,
+                    "Retry budget exhausted, stopping retries"
+                );
+                break;
+            }
+
+            // Exponential backoff with jitter: base * 2^(attempt-1) + random jitter
+            let exp_delay = backoff_base_ms.saturating_mul(1 << (attempts_made - 1));
+            let jitter = rand::rng().random_range(0..=exp_delay / 2);
+            let total_delay = exp_delay + jitter;
+
+            info!(
+                request_id = %request_id,
+                delay_ms = total_delay,
+                "Backing off before retry"
+            );
+
+            sleep(Duration::from_millis(total_delay)).await;
         }
 
         attempts_made += 1;
