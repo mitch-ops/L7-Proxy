@@ -99,6 +99,8 @@ YAML-based configuration:
 ### Observability
 - [x] Structured logging with tracing
 - [x] Request ID propagation
+- [x] Prometheus metrics (request count, latency histogram, retries, errors)
+- [x] Separate metrics server (configurable port)
 
 ### Config
 - [x] YAML config parsing
@@ -116,7 +118,7 @@ YAML-based configuration:
 - No health checking (dead upstreams still used) — ✅ Implemented
 - No backoff strategy (retries are immediate) — ✅ Implemented
 - No connection-level tuning
-- No metrics (Prometheus, etc.)
+- No metrics (Prometheus, etc.) — ✅ Implemented
 - No rate limiting
 - No middleware abstraction (tower not used yet)
 - No graceful shutdown
@@ -147,11 +149,13 @@ YAML-based configuration:
 
 ---
 
-### 4. Observability (Production-Level)
-- [ ] Metrics (Prometheus)
-  - request count
-  - latency
-  - error rate
+### 4. Observability (Production-Level) ✅
+- [x] Metrics (Prometheus)
+  - request count (by method, route, status)
+  - latency histogram
+  - error rate (by route, error type)
+  - retry count (by route)
+- [x] Separate metrics server (configurable port)
 - [ ] Structured spans (tracing)
 - [ ] Request timing
 

@@ -16,6 +16,7 @@ pub struct ServerConfig {
     pub retry_budget_percent: f64,
     #[serde(default = "default_retry_budget_window_secs")]
     pub retry_budget_window_secs: u64,
+    pub metrics_bind: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

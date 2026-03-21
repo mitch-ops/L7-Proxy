@@ -4,6 +4,7 @@ use hyper::header::HeaderName;
 use hyper::{Body, Request, Response, Uri};
 use rand::RngExt;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::time::{Duration, sleep, timeout};
 use tracing::info;
 
@@ -59,7 +60,10 @@ pub async fn proxy_request(
     req: Request<Body>,
     state: Arc<AppState>,
 ) -> Result<Response<Body>, ProxyError> {
+    let start = Instant::now();
     let path = req.uri().path().to_string();
+    let method = req.method().clone();
+    let method_str = method.to_string();
     let request_id = uuid::Uuid::new_v4().to_string();
 
     info!(
@@ -73,12 +77,19 @@ pub async fn proxy_request(
     let route = match state.router.match_route(&path) {
         Some(route) => route,
         None => {
+            state
+                .metrics
+                .requests_total
+                .with_label_values(&[&method_str, "unmatched", "404"])
+                .inc();
             return Ok(Response::builder()
                 .status(404)
                 .body(Body::from("No matching route"))
                 .unwrap());
         }
     };
+
+    let route_prefix = route.prefix.clone();
 
     // Build upstream URI
     let original_path = req
@@ -101,7 +112,6 @@ pub async fn proxy_request(
     let max_retries = state.config.server.max_retries;
     let upstream_count = route.upstreams.len();
 
-    let method = req.method().clone();
     let headers = req.headers().clone();
     let whole_body = hyper::body::to_bytes(req.into_body())
         .await
@@ -148,6 +158,12 @@ pub async fn proxy_request(
                 break;
             }
 
+            state
+                .metrics
+                .retries_total
+                .with_label_values(&[&route_prefix])
+                .inc();
+
             // Exponential backoff with jitter: base * 2^(attempt-1) + random jitter
             let exp_delay = backoff_base_ms.saturating_mul(1 << (attempts_made - 1));
             let jitter = rand::rng().random_range(0..=exp_delay / 2);
@@ -183,15 +199,43 @@ pub async fn proxy_request(
             Ok(resp) => {
                 if resp.status().is_server_error() {
                     state.health.record_failure(selected_upstream);
+                    state
+                        .metrics
+                        .errors_total
+                        .with_label_values(&[&route_prefix, "5xx"])
+                        .inc();
                     last_error = Some(ProxyError::UpstreamFailure);
                     continue;
                 }
                 state.health.record_success(selected_upstream);
+
+                let status = resp.status().as_u16().to_string();
+                let elapsed = start.elapsed().as_secs_f64();
+                state
+                    .metrics
+                    .requests_total
+                    .with_label_values(&[&method_str, &route_prefix, &status])
+                    .inc();
+                state
+                    .metrics
+                    .request_duration_seconds
+                    .with_label_values(&[&method_str, &route_prefix])
+                    .observe(elapsed);
+
                 return Ok(resp);
             }
 
             Err(e @ ProxyError::UpstreamFailure) | Err(e @ ProxyError::UpstreamTimeout) => {
                 state.health.record_failure(selected_upstream);
+                let error_type = match &e {
+                    ProxyError::UpstreamTimeout => "timeout",
+                    _ => "connection",
+                };
+                state
+                    .metrics
+                    .errors_total
+                    .with_label_values(&[&route_prefix, error_type])
+                    .inc();
                 last_error = Some(e);
                 continue;
             }
@@ -200,5 +244,23 @@ pub async fn proxy_request(
         }
     }
 
-    Err(last_error.unwrap_or(ProxyError::UpstreamFailure))
+    // Record failed request metrics
+    let elapsed = start.elapsed().as_secs_f64();
+    let error = last_error.unwrap_or(ProxyError::UpstreamFailure);
+    let status = match &error {
+        ProxyError::UpstreamTimeout => "504",
+        _ => "502",
+    };
+    state
+        .metrics
+        .requests_total
+        .with_label_values(&[&method_str, &route_prefix, status])
+        .inc();
+    state
+        .metrics
+        .request_duration_seconds
+        .with_label_values(&[&method_str, &route_prefix])
+        .observe(elapsed);
+
+    Err(error)
 }

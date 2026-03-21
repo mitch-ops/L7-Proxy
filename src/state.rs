@@ -5,6 +5,7 @@ use hyper::client::HttpConnector;
 
 use crate::config::Config;
 use crate::health::HealthTracker;
+use crate::metrics::Metrics;
 use crate::retry_budget::RetryBudget;
 use crate::router::Router;
 
@@ -15,4 +16,5 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub health: Arc<HealthTracker>,
     pub retry_budget: Arc<RetryBudget>,
+    pub metrics: Arc<Metrics>,
 }

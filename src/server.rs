@@ -1,13 +1,10 @@
-use hyper::{
-    Server,
-    service::{make_service_fn, service_fn},
-};
-use std::{convert::Infallible, net::SocketAddr, sync::Arc};
+use hyper::service::{make_service_fn, service_fn};
+use std::{convert::Infallible, sync::Arc};
 
 use crate::config::Config;
 use crate::{proxy::proxy_request, state::AppState};
 
-pub async fn start_server(state: Arc<AppState>, listener: tokio::net::TcpListener,) {
+pub async fn start_server(state: Arc<AppState>, listener: tokio::net::TcpListener) {
     let make_svc = make_service_fn(move |_| {
         let state = state.clone();
         async move {
@@ -18,6 +15,33 @@ pub async fn start_server(state: Arc<AppState>, listener: tokio::net::TcpListene
                         Ok(resp) => Ok::<_, Infallible>(resp),
                         Err(e) => Ok(e.into_response()),
                     }
+                }
+            }))
+        }
+    });
+
+    hyper::Server::from_tcp(listener.into_std().unwrap())
+        .unwrap()
+        .serve(make_svc)
+        .await
+        .unwrap();
+}
+
+pub async fn start_metrics_server(state: Arc<AppState>, listener: tokio::net::TcpListener) {
+    let make_svc = make_service_fn(move |_| {
+        let state = state.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |_req| {
+                let state = state.clone();
+                async move {
+                    let body = state.metrics.render();
+                    Ok::<_, Infallible>(
+                        hyper::Response::builder()
+                            .status(200)
+                            .header("content-type", "text/plain; version=0.0.4")
+                            .body(hyper::Body::from(body))
+                            .unwrap(),
+                    )
                 }
             }))
         }
@@ -42,6 +66,7 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
             retry_backoff_ms: 10,
             retry_budget_percent: 20.0,
             retry_budget_window_secs: 10,
+            metrics_bind: None,
         },
         routes: vec![crate::config::RouteConfig {
             prefix: "/".to_string(),
@@ -85,12 +110,15 @@ pub async fn start_proxy_with_config(config: Config) -> std::net::SocketAddr {
         config.server.retry_budget_window_secs,
     ));
 
+    let metrics = Arc::new(crate::metrics::Metrics::new());
+
     let state = Arc::new(AppState {
         router,
         client,
         config: Arc::new(config),
         health,
         retry_budget,
+        metrics,
     });
 
     crate::health_check::spawn_active_health_checker(state.clone());

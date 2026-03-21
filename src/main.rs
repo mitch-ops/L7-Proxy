@@ -3,6 +3,7 @@ mod config;
 mod errors;
 mod health;
 mod health_check;
+mod metrics;
 mod proxy;
 mod router;
 mod state;
@@ -12,14 +13,12 @@ mod server;
 use balancer::RoundRobin;
 use config::Config;
 use hyper::client::HttpConnector;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Client, Server};
+use hyper::{Body, Client};
 use router::{Route, Router};
-use std::convert::Infallible;
 use std::fs;
 use std::sync::Arc;
 use tracing::info;
-use crate::server::start_server;
+use crate::server::{start_server, start_metrics_server};
 
 use crate::state::AppState;
 
@@ -27,7 +26,6 @@ use crate::state::AppState;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    // let addr = ([127, 0, 0, 1], 8080).into();
     let config_str = fs::read_to_string("config.yaml")?;
     let config: Config = serde_yaml::from_str(&config_str)?;
     let config = Arc::new(config);
@@ -48,9 +46,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting HTTP server on {}", addr);
 
-    //    let listener = TcpListener::bind(addr).await?;
-
-    // Hyper client with conneciton pooling built in
     let client: Client<HttpConnector, Body> = Client::new();
 
     let health = Arc::new(health::HealthTracker::new(
@@ -63,11 +58,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.server.retry_budget_window_secs,
     ));
 
-    let state = Arc::new(AppState { router, client, config, health, retry_budget });
+    let metrics = Arc::new(metrics::Metrics::new());
+
+    let state = Arc::new(AppState { router, client, config, health, retry_budget, metrics });
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     health_check::spawn_active_health_checker(state.clone());
+
+    // Start metrics server if configured
+    if let Some(ref metrics_bind) = state.config.server.metrics_bind {
+        let metrics_addr: std::net::SocketAddr = metrics_bind.parse()?;
+        let metrics_listener = tokio::net::TcpListener::bind(metrics_addr).await?;
+        info!("Starting metrics server on {}", metrics_addr);
+        let metrics_state = state.clone();
+        tokio::spawn(async move {
+            start_metrics_server(metrics_state, metrics_listener).await;
+        });
+    }
 
     start_server(state, listener).await;
 
