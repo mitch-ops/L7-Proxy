@@ -43,6 +43,7 @@ async fn start_proxy_and_metrics(
             retry_budget_percent: 100.0,
             retry_budget_window_secs: 10,
             metrics_bind: Some(metrics_addr.to_string()),
+            overall_timeout_secs: 30,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),

@@ -1,22 +1,25 @@
-use hyper::service::{make_service_fn, service_fn};
-use std::{convert::Infallible, sync::Arc};
+use hyper::service::make_service_fn;
+use std::convert::Infallible;
+use std::sync::Arc;
+use std::time::Duration;
+use tower::ServiceBuilder;
 
 use crate::config::Config;
-use crate::{proxy::proxy_request, state::AppState};
+use crate::middleware::{LoggingLayer, ProxyService, RequestTimeoutLayer};
+use crate::state::AppState;
 
 pub async fn start_server(state: Arc<AppState>, listener: tokio::net::TcpListener) {
+    let overall_timeout =
+        Duration::from_secs(state.config.server.overall_timeout_secs);
+
     let make_svc = make_service_fn(move |_| {
         let state = state.clone();
         async move {
-            Ok::<_, Infallible>(service_fn(move |req| {
-                let state = state.clone();
-                async move {
-                    match proxy_request(req, state).await {
-                        Ok(resp) => Ok::<_, Infallible>(resp),
-                        Err(e) => Ok(e.into_response()),
-                    }
-                }
-            }))
+            let svc = ServiceBuilder::new()
+                .layer(LoggingLayer)
+                .layer(RequestTimeoutLayer::new(overall_timeout))
+                .service(ProxyService::new(state));
+            Ok::<_, Infallible>(svc)
         }
     });
 
@@ -31,7 +34,7 @@ pub async fn start_metrics_server(state: Arc<AppState>, listener: tokio::net::Tc
     let make_svc = make_service_fn(move |_| {
         let state = state.clone();
         async move {
-            Ok::<_, Infallible>(service_fn(move |_req| {
+            Ok::<_, Infallible>(hyper::service::service_fn(move |_req| {
                 let state = state.clone();
                 async move {
                     let body = state.metrics.render();
@@ -67,6 +70,7 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
             retry_budget_percent: 20.0,
             retry_budget_window_secs: 10,
             metrics_bind: None,
+            overall_timeout_secs: 30,
         },
         routes: vec![crate::config::RouteConfig {
             prefix: "/".to_string(),

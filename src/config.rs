@@ -17,6 +17,8 @@ pub struct ServerConfig {
     #[serde(default = "default_retry_budget_window_secs")]
     pub retry_budget_window_secs: u64,
     pub metrics_bind: Option<String>,
+    #[serde(default = "default_overall_timeout_secs")]
+    pub overall_timeout_secs: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -59,6 +61,10 @@ fn default_retry_budget_percent() -> f64 {
 
 fn default_retry_budget_window_secs() -> u64 {
     10
+}
+
+fn default_overall_timeout_secs() -> u64 {
+    30
 }
 
 #[derive(Debug, Deserialize, Clone)]

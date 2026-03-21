@@ -8,4 +8,5 @@ pub mod errors;
 pub mod health;
 pub mod health_check;
 pub mod metrics;
+pub mod middleware;
 pub mod retry_budget;

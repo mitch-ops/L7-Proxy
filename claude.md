@@ -120,7 +120,7 @@ YAML-based configuration:
 - No connection-level tuning
 - No metrics (Prometheus, etc.) — ✅ Implemented
 - No rate limiting
-- No middleware abstraction (tower not used yet)
+- No middleware abstraction (tower not used yet) — ✅ Implemented
 - No graceful shutdown
 - No TLS / HTTPS support
 - No HTTP/2 support
@@ -161,12 +161,12 @@ YAML-based configuration:
 
 ---
 
-### 5. Middleware Layer (Tower)
-- Introduce `tower::Service`
-- Add:
-  - logging middleware
-  - retry middleware
-  - timeout middleware
+### 5. Middleware Layer (Tower) ✅
+- [x] Introduce `tower::Service` (`ProxyService`)
+- [x] Logging middleware (method, path, status, duration)
+- [x] Overall request timeout middleware (distinct from per-upstream timeout)
+- [x] `ServiceBuilder` composition in server
+- Retry logic remains in `proxy.rs` (tightly coupled with health/budget)
 
 ---
 

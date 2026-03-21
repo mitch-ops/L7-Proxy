@@ -4,6 +4,7 @@ mod errors;
 mod health;
 mod health_check;
 mod metrics;
+mod middleware;
 mod proxy;
 mod router;
 mod state;
