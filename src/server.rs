@@ -7,6 +7,8 @@ use std::time::Duration;
 use tower::ServiceBuilder;
 use tracing::info;
 
+use arc_swap::ArcSwap;
+
 use crate::config::Config;
 use crate::middleware::{
     InjectAddrService, LoggingLayer, ProxyService, RateLimitLayer, RequestTimeoutLayer,
@@ -19,8 +21,9 @@ pub async fn start_server(
     listener: tokio::net::TcpListener,
     shutdown_signal: impl Future<Output = ()> + Send + 'static,
 ) {
-    let overall_timeout = Duration::from_secs(state.config.server.overall_timeout_secs);
-    let drain_timeout = Duration::from_secs(state.config.server.drain_timeout_secs);
+    let config = state.config.load();
+    let overall_timeout = Duration::from_secs(config.server.overall_timeout_secs);
+    let drain_timeout = Duration::from_secs(config.server.drain_timeout_secs);
 
     let make_svc = make_service_fn(move |conn: &AddrStream| {
         let remote_ip = conn.remote_addr().ip();
@@ -185,9 +188,9 @@ async fn build_proxy(config: Config) -> (Arc<AppState>, tokio::net::TcpListener)
     });
 
     let state = Arc::new(AppState {
-        router,
+        router: ArcSwap::new(router),
         client,
-        config: Arc::new(config),
+        config: ArcSwap::new(Arc::new(config)),
         health,
         retry_budget,
         metrics,

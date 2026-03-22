@@ -105,6 +105,7 @@ YAML-based configuration:
 ### Config
 - [x] YAML config parsing
 - [x] Runtime-configured routes + upstreams
+- [x] Hot reload via SIGHUP (arc-swap, lock-free swap of config + routes)
 
 ### Testing
 - [x] Integration test with real upstream servers
@@ -122,6 +123,7 @@ YAML-based configuration:
 - No rate limiting — ✅ Implemented
 - No middleware abstraction (tower not used yet) — ✅ Implemented
 - No graceful shutdown — ✅ Implemented
+- No config reloading — ✅ Implemented
 - No TLS / HTTPS support
 - No HTTP/2 support
 
@@ -179,8 +181,12 @@ YAML-based configuration:
 
 ---
 
-### 7. Configuration Reloading
-- Hot reload config without restart
+### 7. Configuration Reloading ✅
+- [x] `arc-swap` for lock-free atomic swapping of `Config` and `Router`
+- [x] `apply_config()` swaps routes + config in-place
+- [x] `reload_config()` reads YAML from disk and applies it
+- [x] `spawn_config_reloader()` listens for SIGHUP (Unix)
+- [x] All request-path code uses `.load()` snapshots (no lock contention)
 
 ---
 

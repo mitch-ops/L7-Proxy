@@ -1,33 +1,21 @@
 use crate::errors::ProxyError;
 use crate::state::AppState;
+use hyper::client::HttpConnector;
 use hyper::header::HeaderName;
-use hyper::{Body, Request, Response, Uri};
+use hyper::{Body, Client, Request, Response, Uri};
 use rand::RngExt;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::{Duration, sleep, timeout};
 use tracing::info;
 
-/**
- * Core proxy logic:
- * - Match route
- * - Build upstream URI
- * - Forward request
- * - Handle response
- * - Retry logic
- */
-
-/**
- * Forward request to upstream and return response. Returns ProxyError on failure or timeout.
- * No cloning
- * takes ownership of req, so we can modify it without cloning.
- */
 async fn forward_once(
     mut req: Request<Body>,
     upstream: &str,
     final_path: &str,
     request_id: &str,
-    state: &AppState,
+    client: &Client<HttpConnector>,
+    request_timeout: Duration,
 ) -> Result<Response<Body>, ProxyError> {
     let new_uri = format!("{}{}", upstream, final_path);
 
@@ -42,14 +30,9 @@ async fn forward_once(
         request_id.parse().unwrap(),
     );
 
-    let upstream_call = state.client.request(req);
+    let upstream_call = client.request(req);
 
-    match timeout(
-        Duration::from_secs(state.config.server.request_timeout_secs),
-        upstream_call,
-    )
-    .await
-    {
+    match timeout(request_timeout, upstream_call).await {
         Ok(Ok(resp)) => Ok(resp),
         Ok(Err(_)) => Err(ProxyError::UpstreamFailure),
         Err(_) => Err(ProxyError::UpstreamTimeout),
@@ -66,6 +49,10 @@ pub async fn proxy_request(
     let method_str = method.to_string();
     let request_id = uuid::Uuid::new_v4().to_string();
 
+    // Load current config and router (snapshot for this request)
+    let config = state.config.load();
+    let router = state.router.load();
+
     info!(
         request_id = %request_id,
         method = ?req.method(),
@@ -74,7 +61,7 @@ pub async fn proxy_request(
     );
 
     // Match route
-    let route = match state.router.match_route(&path) {
+    let route = match router.match_route(&path) {
         Some(route) => route,
         None => {
             state
@@ -109,8 +96,9 @@ pub async fn proxy_request(
         stripped_path
     };
 
-    let max_retries = state.config.server.max_retries;
+    let max_retries = config.server.max_retries;
     let upstream_count = route.upstreams.len();
+    let request_timeout = Duration::from_secs(config.server.request_timeout_secs);
 
     let headers = req.headers().clone();
     let whole_body = hyper::body::to_bytes(req.into_body())
@@ -125,7 +113,7 @@ pub async fn proxy_request(
 
     let max_attempts = max_retries + 1;
     let mut attempts_made = 0;
-    let backoff_base_ms = state.config.server.retry_backoff_ms;
+    let backoff_base_ms = config.server.retry_backoff_ms;
 
     // Record this request for retry budget tracking
     state.retry_budget.record_request();
@@ -195,7 +183,16 @@ pub async fn proxy_request(
 
         *new_req.headers_mut() = headers.clone();
 
-        match forward_once(new_req, selected_upstream, &final_path, &request_id, &state).await {
+        match forward_once(
+            new_req,
+            selected_upstream,
+            &final_path,
+            &request_id,
+            &state.client,
+            request_timeout,
+        )
+        .await
+        {
             Ok(resp) => {
                 if resp.status().is_server_error() {
                     state.health.record_failure(selected_upstream);

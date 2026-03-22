@@ -1,5 +1,6 @@
 mod balancer;
 mod config;
+mod config_reloader;
 mod errors;
 mod health;
 mod health_check;
@@ -12,6 +13,7 @@ mod state;
 mod retry_budget;
 mod server;
 
+use arc_swap::ArcSwap;
 use balancer::RoundRobin;
 use config::Config;
 use hyper::client::HttpConnector;
@@ -67,14 +69,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => rate_limiter::RateLimiter::disabled(),
     });
 
-    let state = Arc::new(AppState { router, client, config, health, retry_budget, metrics, rate_limiter });
+    let state = Arc::new(AppState {
+        router: ArcSwap::new(router),
+        client,
+        config: ArcSwap::new(config),
+        health,
+        retry_budget,
+        metrics,
+        rate_limiter,
+    });
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     health_check::spawn_active_health_checker(state.clone());
+    config_reloader::spawn_config_reloader(state.clone(), "config.yaml".to_string());
 
     // Start metrics server if configured
-    if let Some(ref metrics_bind) = state.config.server.metrics_bind {
+    if let Some(ref metrics_bind) = state.config.load().server.metrics_bind {
         let metrics_addr: std::net::SocketAddr = metrics_bind.parse()?;
         let metrics_listener = tokio::net::TcpListener::bind(metrics_addr).await?;
         info!("Starting metrics server on {}", metrics_addr);

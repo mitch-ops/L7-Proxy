@@ -55,6 +55,7 @@ async fn start_proxy_and_metrics(
 
     // start_proxy_with_config binds its own listener, but we need the metrics server too.
     // We'll set up state manually to control both listeners.
+    use arc_swap::ArcSwap;
     use rust_proxy::balancer::RoundRobin;
     use rust_proxy::health::HealthTracker;
     use rust_proxy::metrics::Metrics;
@@ -93,9 +94,9 @@ async fn start_proxy_and_metrics(
     let rate_limiter = Arc::new(rust_proxy::rate_limiter::RateLimiter::disabled());
 
     let state = Arc::new(AppState {
-        router,
+        router: ArcSwap::new(router),
         client,
-        config: Arc::new(config),
+        config: ArcSwap::new(Arc::new(config)),
         health,
         retry_budget,
         metrics,

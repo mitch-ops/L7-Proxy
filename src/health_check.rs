@@ -8,7 +8,8 @@ use crate::config::HealthCheckConfig;
 use crate::state::AppState;
 
 pub fn spawn_active_health_checker(state: Arc<AppState>) {
-    let hc_config = match &state.config.server.health_check {
+    let config = state.config.load();
+    let hc_config = match &config.server.health_check {
         Some(cfg) => cfg.clone(),
         None => return,
     };
@@ -28,8 +29,9 @@ async fn run_health_check_loop(state: Arc<AppState>, config: HealthCheckConfig) 
 
     // Collect all unique upstreams across all routes
     let upstreams: Vec<String> = {
+        let cfg = state.config.load();
         let mut set = HashSet::new();
-        for route_cfg in &state.config.routes {
+        for route_cfg in &cfg.routes {
             for upstream in &route_cfg.upstream {
                 set.insert(upstream.clone());
             }

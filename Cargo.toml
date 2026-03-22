@@ -16,3 +16,4 @@ reqwest = { version = "0.11", features = ["json"] }
 rand = "0.10.0"
 prometheus = "0.13"
 tower = { version = "0.4", features = ["util"] }
+arc-swap = "1"
