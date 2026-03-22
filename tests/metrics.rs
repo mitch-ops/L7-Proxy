@@ -50,13 +50,15 @@ async fn start_proxy_and_metrics(
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
             upstream: upstreams,
+            strategy: Default::default(),
+            weights: None,
         }],
     };
 
     // start_proxy_with_config binds its own listener, but we need the metrics server too.
     // We'll set up state manually to control both listeners.
     use arc_swap::ArcSwap;
-    use rust_proxy::balancer::RoundRobin;
+    use rust_proxy::balancer::create_balancer;
     use rust_proxy::health::HealthTracker;
     use rust_proxy::metrics::Metrics;
     use rust_proxy::retry_budget::RetryBudget;
@@ -76,7 +78,7 @@ async fn start_proxy_and_metrics(
         .map(|r| Route {
             prefix: r.prefix.clone(),
             upstreams: r.upstream.clone(),
-            balancer: RoundRobin::new(),
+            balancer: create_balancer(&r.strategy, r.upstream.len(), r.weights.as_deref()),
         })
         .collect();
 

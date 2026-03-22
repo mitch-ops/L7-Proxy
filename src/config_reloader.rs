@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tracing::{error, info};
 
-use crate::balancer::RoundRobin;
+use crate::balancer::create_balancer;
 use crate::config::Config;
 use crate::router::{Route, Router};
 use crate::state::AppState;
@@ -15,7 +15,7 @@ pub fn apply_config(state: &AppState, config: Config) {
         .map(|r| Route {
             prefix: r.prefix.clone(),
             upstreams: r.upstream.clone(),
-            balancer: RoundRobin::new(),
+            balancer: create_balancer(&r.strategy, r.upstream.len(), r.weights.as_deref()),
         })
         .collect();
 

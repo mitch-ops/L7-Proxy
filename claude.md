@@ -85,6 +85,9 @@ YAML-based configuration:
 
 ### Load Balancing
 - [x] Round-robin across upstreams
+- [x] Least connections
+- [x] Weighted round robin
+- [x] Per-route strategy selection
 
 ### Retries
 - [x] Retry on:
@@ -198,10 +201,14 @@ YAML-based configuration:
 
 ---
 
-### 9. Advanced Load Balancing
-- Least connections
-- Weighted round robin
-- Consistent hashing
+### 9. Advanced Load Balancing ✅
+- [x] `LoadBalancer` trait with `next_index`, `record_start`, `record_done`
+- [x] Round robin (existing, now implements trait)
+- [x] Least connections (tracks active connections per upstream via atomics)
+- [x] Weighted round robin (expanded schedule from weights, e.g. [3,1] → [A,A,A,B])
+- [x] Per-route strategy selection via config (`strategy` + `weights` on route)
+- [x] `create_balancer` factory function
+- [ ] Consistent hashing
 
 ---
 

@@ -49,6 +49,8 @@ async fn graceful_shutdown_completes_in_flight_request() {
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
             upstream: vec![format!("http://{}", upstream_addr)],
+            strategy: Default::default(),
+            weights: None,
         }],
     };
 

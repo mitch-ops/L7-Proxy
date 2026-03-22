@@ -80,10 +80,22 @@ fn default_drain_timeout_secs() -> u64 {
     30
 }
 
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BalancerStrategy {
+    #[default]
+    RoundRobin,
+    LeastConnections,
+    WeightedRoundRobin,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct RouteConfig {
     pub prefix: String,
     pub upstream: Vec<String>,
+    #[serde(default)]
+    pub strategy: BalancerStrategy,
+    pub weights: Option<Vec<u32>>,
 }
 
 #[derive(Debug, Deserialize)]

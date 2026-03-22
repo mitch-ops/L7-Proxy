@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task;
 
-use rust_proxy::balancer::RoundRobin;
+use rust_proxy::balancer::create_balancer;
 use rust_proxy::config::{Config, RouteConfig, ServerConfig};
 use rust_proxy::config_reloader::apply_config;
 use rust_proxy::health::HealthTracker;
@@ -51,6 +51,8 @@ fn make_config(upstreams: Vec<String>) -> Config {
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
             upstream: upstreams,
+            strategy: Default::default(),
+            weights: None,
         }],
     }
 }
@@ -62,7 +64,7 @@ fn build_state(config: Config) -> Arc<AppState> {
         .map(|r| Route {
             prefix: r.prefix.clone(),
             upstreams: r.upstream.clone(),
-            balancer: RoundRobin::new(),
+            balancer: create_balancer(&r.strategy, r.upstream.len(), r.weights.as_deref()),
         })
         .collect();
 

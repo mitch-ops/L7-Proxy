@@ -50,6 +50,8 @@ async fn overall_timeout_returns_504() {
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
             upstream: vec![format!("http://{}", upstream_addr)],
+            strategy: Default::default(),
+            weights: None,
         }],
     };
 

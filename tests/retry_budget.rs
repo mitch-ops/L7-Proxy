@@ -63,6 +63,8 @@ async fn retry_budget_limits_retries() {
                 format!("http://{}", addr_a),
                 format!("http://{}", addr_b),
             ],
+            strategy: Default::default(),
+            weights: None,
         }],
     };
 

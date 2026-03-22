@@ -50,6 +50,8 @@ async fn rate_limit_returns_429_when_exceeded() {
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
             upstream: vec![format!("http://{}", upstream_addr)],
+            strategy: Default::default(),
+            weights: None,
         }],
     };
 

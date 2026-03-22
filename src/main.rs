@@ -14,7 +14,7 @@ mod retry_budget;
 mod server;
 
 use arc_swap::ArcSwap;
-use balancer::RoundRobin;
+use balancer::create_balancer;
 use config::Config;
 use hyper::client::HttpConnector;
 use hyper::{Body, Client};
@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|r| Route {
             prefix: r.prefix.clone(),
             upstreams: r.upstream.clone(),
-            balancer: RoundRobin::new(),
+            balancer: create_balancer(&r.strategy, r.upstream.len(), r.weights.as_deref()),
         })
         .collect::<Vec<_>>();
 

@@ -66,6 +66,8 @@ async fn unhealthy_upstream_is_skipped() {
                 format!("http://{}", fail_addr),
                 format!("http://{}", ok_addr),
             ],
+            strategy: Default::default(),
+            weights: None,
         }],
     };
 
@@ -163,6 +165,8 @@ async fn active_health_check_marks_upstream_unhealthy() {
                 format!("http://{}", addr_a),
                 format!("http://{}", addr_b),
             ],
+            strategy: Default::default(),
+            weights: None,
         }],
     };
 

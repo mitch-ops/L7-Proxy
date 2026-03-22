@@ -9,6 +9,7 @@ use tracing::info;
 
 use arc_swap::ArcSwap;
 
+use crate::balancer::create_balancer;
 use crate::config::Config;
 use crate::middleware::{
     InjectAddrService, LoggingLayer, ProxyService, RateLimitLayer, RequestTimeoutLayer,
@@ -146,6 +147,8 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
                 "http://127.0.0.1:9001".to_string(),
                 "http://127.0.0.1:9002".to_string(),
             ],
+            strategy: Default::default(),
+            weights: None,
         }],
     };
 
@@ -163,7 +166,7 @@ async fn build_proxy(config: Config) -> (Arc<AppState>, tokio::net::TcpListener)
         .map(|r| crate::router::Route {
             prefix: r.prefix.clone(),
             upstreams: r.upstream.clone(),
-            balancer: crate::balancer::RoundRobin::new(),
+            balancer: create_balancer(&r.strategy, r.upstream.len(), r.weights.as_deref()),
         })
         .collect();
 

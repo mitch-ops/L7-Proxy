@@ -1,13 +1,11 @@
-use crate::balancer::RoundRobin;
+use crate::balancer::LoadBalancer;
 
-// #[derive(Clone)]
 pub struct Route {
     pub prefix: String,
     pub upstreams: Vec<String>,
-    pub balancer: RoundRobin,
+    pub balancer: Box<dyn LoadBalancer>,
 }
 
-// #[derive(Clone)]
 pub struct Router {
     routes: Vec<Route>,
 }

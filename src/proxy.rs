@@ -183,7 +183,9 @@ pub async fn proxy_request(
 
         *new_req.headers_mut() = headers.clone();
 
-        match forward_once(
+        route.balancer.record_start(index);
+
+        let result = forward_once(
             new_req,
             selected_upstream,
             &final_path,
@@ -191,8 +193,11 @@ pub async fn proxy_request(
             &state.client,
             request_timeout,
         )
-        .await
-        {
+        .await;
+
+        route.balancer.record_done(index);
+
+        match result {
             Ok(resp) => {
                 if resp.status().is_server_error() {
                     state.health.record_failure(selected_upstream);
