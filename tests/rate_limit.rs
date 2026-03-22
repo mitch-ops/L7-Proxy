@@ -41,6 +41,7 @@ async fn rate_limit_returns_429_when_exceeded() {
             retry_budget_window_secs: 10,
             metrics_bind: None,
             overall_timeout_secs: 30,
+            drain_timeout_secs: 30,
             rate_limit: Some(RateLimitConfig {
                 requests_per_second: 2.0,
                 burst_size: 2,

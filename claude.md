@@ -121,7 +121,7 @@ YAML-based configuration:
 - No metrics (Prometheus, etc.) — ✅ Implemented
 - No rate limiting — ✅ Implemented
 - No middleware abstraction (tower not used yet) — ✅ Implemented
-- No graceful shutdown
+- No graceful shutdown — ✅ Implemented
 - No TLS / HTTPS support
 - No HTTP/2 support
 
@@ -184,9 +184,11 @@ YAML-based configuration:
 
 ---
 
-### 8. Graceful Shutdown
-- Drain in-flight requests
-- Close listeners cleanly
+### 8. Graceful Shutdown ✅
+- [x] SIGINT + SIGTERM signal handling
+- [x] Drain in-flight requests via `with_graceful_shutdown`
+- [x] Configurable drain timeout (force-stop if exceeded)
+- [x] `start_proxy_with_shutdown` test helper
 
 ---
 

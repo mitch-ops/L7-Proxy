@@ -20,7 +20,7 @@ use router::{Route, Router};
 use std::fs;
 use std::sync::Arc;
 use tracing::info;
-use crate::server::{start_server, start_metrics_server};
+use crate::server::{start_server, start_metrics_server, shutdown_signal};
 
 use crate::state::AppState;
 
@@ -84,7 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    start_server(state, listener).await;
+    info!("Press Ctrl+C to shutdown");
+    start_server(state, listener, shutdown_signal()).await;
 
     Ok(())
 }

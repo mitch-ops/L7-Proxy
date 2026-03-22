@@ -55,6 +55,7 @@ async fn retry_budget_limits_retries() {
             metrics_bind: None,
             overall_timeout_secs: 30,
             rate_limit: None,
+            drain_timeout_secs: 30,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),

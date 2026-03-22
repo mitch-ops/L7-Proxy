@@ -1,9 +1,11 @@
 use hyper::server::conn::AddrStream;
 use hyper::service::make_service_fn;
 use std::convert::Infallible;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tower::ServiceBuilder;
+use tracing::info;
 
 use crate::config::Config;
 use crate::middleware::{
@@ -12,8 +14,13 @@ use crate::middleware::{
 use crate::rate_limiter::RateLimiter;
 use crate::state::AppState;
 
-pub async fn start_server(state: Arc<AppState>, listener: tokio::net::TcpListener) {
+pub async fn start_server(
+    state: Arc<AppState>,
+    listener: tokio::net::TcpListener,
+    shutdown_signal: impl Future<Output = ()> + Send + 'static,
+) {
     let overall_timeout = Duration::from_secs(state.config.server.overall_timeout_secs);
+    let drain_timeout = Duration::from_secs(state.config.server.drain_timeout_secs);
 
     let make_svc = make_service_fn(move |conn: &AddrStream| {
         let remote_ip = conn.remote_addr().ip();
@@ -32,11 +39,40 @@ pub async fn start_server(state: Arc<AppState>, listener: tokio::net::TcpListene
         }
     });
 
-    hyper::Server::from_tcp(listener.into_std().unwrap())
+    // Share the shutdown signal between graceful shutdown and drain timeout
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+    tokio::spawn(async move {
+        shutdown_signal.await;
+        let _ = shutdown_tx.send(true);
+    });
+
+    let mut graceful_rx = shutdown_rx.clone();
+    let server = hyper::Server::from_tcp(listener.into_std().unwrap())
         .unwrap()
         .serve(make_svc)
-        .await
-        .unwrap();
+        .with_graceful_shutdown(async move {
+            graceful_rx.changed().await.ok();
+            info!("Shutdown signal received, draining connections...");
+        });
+
+    // Race the server against the drain timeout.
+    // The drain timeout only starts counting after the shutdown signal fires.
+    let mut drain_rx = shutdown_rx;
+    tokio::select! {
+        result = server => {
+            match result {
+                Ok(_) => info!("Server shut down gracefully"),
+                Err(e) => tracing::error!("Server error: {}", e),
+            }
+        }
+        _ = async move {
+            drain_rx.changed().await.ok();
+            tokio::time::sleep(drain_timeout).await;
+        } => {
+            info!("Drain timeout exceeded ({}s), forcing shutdown", drain_timeout.as_secs());
+        }
+    }
 }
 
 pub async fn start_metrics_server(state: Arc<AppState>, listener: tokio::net::TcpListener) {
@@ -66,6 +102,24 @@ pub async fn start_metrics_server(state: Arc<AppState>, listener: tokio::net::Tc
         .unwrap();
 }
 
+pub async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    {
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to listen for SIGTERM");
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = sigterm.recv() => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    ctrl_c.await.expect("failed to listen for ctrl+c");
+}
+
 pub async fn start_proxy_for_test() -> std::net::SocketAddr {
     let config = Config {
         server: crate::config::ServerConfig {
@@ -81,6 +135,7 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
             metrics_bind: None,
             overall_timeout_secs: 30,
             rate_limit: None,
+            drain_timeout_secs: 30,
         },
         routes: vec![crate::config::RouteConfig {
             prefix: "/".to_string(),
@@ -94,12 +149,10 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
     start_proxy_with_config(config).await
 }
 
-pub async fn start_proxy_with_config(config: Config) -> std::net::SocketAddr {
+async fn build_proxy(config: Config) -> (Arc<AppState>, tokio::net::TcpListener) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .unwrap();
-
-    let addr = listener.local_addr().unwrap();
 
     let routes = config
         .routes
@@ -143,9 +196,33 @@ pub async fn start_proxy_with_config(config: Config) -> std::net::SocketAddr {
 
     crate::health_check::spawn_active_health_checker(state.clone());
 
+    (state, listener)
+}
+
+pub async fn start_proxy_with_config(config: Config) -> std::net::SocketAddr {
+    let (state, listener) = build_proxy(config).await;
+    let addr = listener.local_addr().unwrap();
+
     tokio::spawn(async move {
-        start_server(state, listener).await;
+        start_server(state, listener, std::future::pending::<()>()).await;
     });
 
     addr
+}
+
+pub async fn start_proxy_with_shutdown(
+    config: Config,
+) -> (std::net::SocketAddr, tokio::sync::oneshot::Sender<()>) {
+    let (state, listener) = build_proxy(config).await;
+    let addr = listener.local_addr().unwrap();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+
+    tokio::spawn(async move {
+        start_server(state, listener, async {
+            shutdown_rx.await.ok();
+        })
+        .await;
+    });
+
+    (addr, shutdown_tx)
 }

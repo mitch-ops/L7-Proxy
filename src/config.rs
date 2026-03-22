@@ -20,6 +20,8 @@ pub struct ServerConfig {
     #[serde(default = "default_overall_timeout_secs")]
     pub overall_timeout_secs: u64,
     pub rate_limit: Option<RateLimitConfig>,
+    #[serde(default = "default_drain_timeout_secs")]
+    pub drain_timeout_secs: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -71,6 +73,10 @@ fn default_retry_budget_window_secs() -> u64 {
 }
 
 fn default_overall_timeout_secs() -> u64 {
+    30
+}
+
+fn default_drain_timeout_secs() -> u64 {
     30
 }
 

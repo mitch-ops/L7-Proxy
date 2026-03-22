@@ -45,6 +45,7 @@ async fn start_proxy_and_metrics(
             metrics_bind: Some(metrics_addr.to_string()),
             overall_timeout_secs: 30,
             rate_limit: None,
+            drain_timeout_secs: 30,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
@@ -107,7 +108,7 @@ async fn start_proxy_and_metrics(
     });
 
     tokio::spawn(async move {
-        start_server(state, proxy_listener).await;
+        start_server(state, proxy_listener, std::future::pending::<()>()).await;
     });
 
     tokio::time::sleep(Duration::from_millis(100)).await;
