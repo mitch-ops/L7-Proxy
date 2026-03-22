@@ -19,6 +19,13 @@ pub struct ServerConfig {
     pub metrics_bind: Option<String>,
     #[serde(default = "default_overall_timeout_secs")]
     pub overall_timeout_secs: u64,
+    pub rate_limit: Option<RateLimitConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct RateLimitConfig {
+    pub requests_per_second: f64,
+    pub burst_size: u32,
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -44,6 +44,7 @@ async fn start_proxy_and_metrics(
             retry_budget_window_secs: 10,
             metrics_bind: Some(metrics_addr.to_string()),
             overall_timeout_secs: 30,
+            rate_limit: None,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
@@ -88,6 +89,7 @@ async fn start_proxy_and_metrics(
         config.server.retry_budget_window_secs,
     ));
     let metrics = Arc::new(Metrics::new());
+    let rate_limiter = Arc::new(rust_proxy::rate_limiter::RateLimiter::disabled());
 
     let state = Arc::new(AppState {
         router,
@@ -96,6 +98,7 @@ async fn start_proxy_and_metrics(
         health,
         retry_budget,
         metrics,
+        rate_limiter,
     });
 
     let metrics_state = state.clone();

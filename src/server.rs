@@ -1,3 +1,4 @@
+use hyper::server::conn::AddrStream;
 use hyper::service::make_service_fn;
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -5,21 +6,29 @@ use std::time::Duration;
 use tower::ServiceBuilder;
 
 use crate::config::Config;
-use crate::middleware::{LoggingLayer, ProxyService, RequestTimeoutLayer};
+use crate::middleware::{
+    InjectAddrService, LoggingLayer, ProxyService, RateLimitLayer, RequestTimeoutLayer,
+};
+use crate::rate_limiter::RateLimiter;
 use crate::state::AppState;
 
 pub async fn start_server(state: Arc<AppState>, listener: tokio::net::TcpListener) {
-    let overall_timeout =
-        Duration::from_secs(state.config.server.overall_timeout_secs);
+    let overall_timeout = Duration::from_secs(state.config.server.overall_timeout_secs);
 
-    let make_svc = make_service_fn(move |_| {
+    let make_svc = make_service_fn(move |conn: &AddrStream| {
+        let remote_ip = conn.remote_addr().ip();
         let state = state.clone();
         async move {
+            let rate_limiter = state.rate_limiter.clone();
             let svc = ServiceBuilder::new()
                 .layer(LoggingLayer)
+                .layer(RateLimitLayer::new(rate_limiter))
                 .layer(RequestTimeoutLayer::new(overall_timeout))
                 .service(ProxyService::new(state));
-            Ok::<_, Infallible>(svc)
+            Ok::<_, Infallible>(InjectAddrService {
+                inner: svc,
+                remote_ip,
+            })
         }
     });
 
@@ -71,6 +80,7 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
             retry_budget_window_secs: 10,
             metrics_bind: None,
             overall_timeout_secs: 30,
+            rate_limit: None,
         },
         routes: vec![crate::config::RouteConfig {
             prefix: "/".to_string(),
@@ -116,6 +126,11 @@ pub async fn start_proxy_with_config(config: Config) -> std::net::SocketAddr {
 
     let metrics = Arc::new(crate::metrics::Metrics::new());
 
+    let rate_limiter = Arc::new(match &config.server.rate_limit {
+        Some(rl) => RateLimiter::new(rl.requests_per_second, rl.burst_size),
+        None => RateLimiter::disabled(),
+    });
+
     let state = Arc::new(AppState {
         router,
         client,
@@ -123,6 +138,7 @@ pub async fn start_proxy_with_config(config: Config) -> std::net::SocketAddr {
         health,
         retry_budget,
         metrics,
+        rate_limiter,
     });
 
     crate::health_check::spawn_active_health_checker(state.clone());

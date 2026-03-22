@@ -1,6 +1,7 @@
 use hyper::{Body, Request, Response, StatusCode};
 use std::convert::Infallible;
 use std::future::Future;
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -9,6 +10,7 @@ use tower::{Layer, Service};
 use tracing::info;
 
 use crate::proxy::proxy_request;
+use crate::rate_limiter::RateLimiter;
 use crate::state::AppState;
 
 // --- ProxyService ---
@@ -168,5 +170,103 @@ where
                     .unwrap()),
             }
         })
+    }
+}
+
+// --- InjectAddrService ---
+
+/// Injects the client's remote IP as a request extension.
+/// Created per-connection in start_server from the AddrStream.
+#[derive(Clone)]
+pub struct InjectAddrService<S> {
+    pub inner: S,
+    pub remote_ip: IpAddr,
+}
+
+/// Request extension carrying the client's remote IP address.
+#[derive(Clone, Copy)]
+pub struct RemoteAddr(pub IpAddr);
+
+impl<S> Service<Request<Body>> for InjectAddrService<S>
+where
+    S: Service<Request<Body>>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, mut req: Request<Body>) -> Self::Future {
+        req.extensions_mut().insert(RemoteAddr(self.remote_ip));
+        self.inner.call(req)
+    }
+}
+
+// --- RateLimitLayer ---
+
+/// Tower Layer that enforces per-IP rate limiting using a token bucket.
+/// Returns 429 Too Many Requests with a Retry-After header when exceeded.
+#[derive(Clone)]
+pub struct RateLimitLayer {
+    rate_limiter: Arc<RateLimiter>,
+}
+
+impl RateLimitLayer {
+    pub fn new(rate_limiter: Arc<RateLimiter>) -> Self {
+        Self { rate_limiter }
+    }
+}
+
+impl<S> Layer<S> for RateLimitLayer {
+    type Service = RateLimitMiddleware<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        RateLimitMiddleware {
+            inner,
+            rate_limiter: self.rate_limiter.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct RateLimitMiddleware<S> {
+    inner: S,
+    rate_limiter: Arc<RateLimiter>,
+}
+
+impl<S> Service<Request<Body>> for RateLimitMiddleware<S>
+where
+    S: Service<Request<Body>, Response = Response<Body>, Error = Infallible>
+        + Clone
+        + Send
+        + 'static,
+    S::Future: Send,
+{
+    type Response = Response<Body>;
+    type Error = Infallible;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: Request<Body>) -> Self::Future {
+        if let Some(remote) = req.extensions().get::<RemoteAddr>() {
+            if !self.rate_limiter.check(remote.0) {
+                return Box::pin(async {
+                    Ok(Response::builder()
+                        .status(StatusCode::TOO_MANY_REQUESTS)
+                        .header("Retry-After", "1")
+                        .body(Body::from("Rate limit exceeded"))
+                        .unwrap())
+                });
+            }
+        }
+
+        let fut = self.inner.call(req);
+        Box::pin(fut)
     }
 }

@@ -119,7 +119,7 @@ YAML-based configuration:
 - No backoff strategy (retries are immediate) — ✅ Implemented
 - No connection-level tuning
 - No metrics (Prometheus, etc.) — ✅ Implemented
-- No rate limiting
+- No rate limiting — ✅ Implemented
 - No middleware abstraction (tower not used yet) — ✅ Implemented
 - No graceful shutdown
 - No TLS / HTTPS support
@@ -170,9 +170,12 @@ YAML-based configuration:
 
 ---
 
-### 6. Rate Limiting
-- Token bucket / leaky bucket
-- Per-IP or per-route limits
+### 6. Rate Limiting ✅
+- [x] Token bucket algorithm (per-IP)
+- [x] Configurable requests_per_second and burst_size
+- [x] Tower middleware (returns 429 + Retry-After header)
+- [x] Client IP extracted from connection (AddrStream)
+- [x] Periodic stale bucket cleanup
 
 ---
 

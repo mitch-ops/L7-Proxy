@@ -44,6 +44,7 @@ async fn overall_timeout_returns_504() {
             retry_budget_window_secs: 10,
             metrics_bind: None,
             overall_timeout_secs: 1, // overall: strict — should fire first
+            rate_limit: None,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),

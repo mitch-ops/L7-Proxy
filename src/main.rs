@@ -6,6 +6,7 @@ mod health_check;
 mod metrics;
 mod middleware;
 mod proxy;
+mod rate_limiter;
 mod router;
 mod state;
 mod retry_budget;
@@ -61,7 +62,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let metrics = Arc::new(metrics::Metrics::new());
 
-    let state = Arc::new(AppState { router, client, config, health, retry_budget, metrics });
+    let rate_limiter = Arc::new(match &config.server.rate_limit {
+        Some(rl) => rate_limiter::RateLimiter::new(rl.requests_per_second, rl.burst_size),
+        None => rate_limiter::RateLimiter::disabled(),
+    });
+
+    let state = Arc::new(AppState { router, client, config, health, retry_budget, metrics, rate_limiter });
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
 

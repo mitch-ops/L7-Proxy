@@ -57,6 +57,7 @@ async fn unhealthy_upstream_is_skipped() {
             retry_budget_window_secs: 10,
             metrics_bind: None,
             overall_timeout_secs: 30,
+            rate_limit: None,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
@@ -152,6 +153,7 @@ async fn active_health_check_marks_upstream_unhealthy() {
             retry_budget_window_secs: 10,
             metrics_bind: None,
             overall_timeout_secs: 30,
+            rate_limit: None,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
