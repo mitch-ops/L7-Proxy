@@ -56,6 +56,8 @@ async fn retry_budget_limits_retries() {
             overall_timeout_secs: 30,
             rate_limit: None,
             drain_timeout_secs: 30,
+            pool_idle_timeout_secs: 90,
+            pool_max_idle_per_host: 32,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),

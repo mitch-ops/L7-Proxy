@@ -127,8 +127,8 @@ YAML-based configuration:
 - No middleware abstraction (tower not used yet) — ✅ Implemented
 - No graceful shutdown — ✅ Implemented
 - No config reloading — ✅ Implemented
-- No TLS / HTTPS support
-- No HTTP/2 support
+- No TLS / HTTPS support — ✅ Implemented (upstream connections)
+- No HTTP/2 support (intentionally omitted — edge LB concern)
 
 ---
 
@@ -212,10 +212,11 @@ YAML-based configuration:
 
 ---
 
-### 10. HTTP Features
-- Connection reuse tuning
-- HTTP/2 support
-- Header normalization
+### 10. HTTP Features ✅
+- [x] Connection pool tuning (configurable idle timeout + max idle per host)
+- [x] TLS/HTTPS upstream support (`hyper-tls`, proxy can connect to HTTPS backends)
+- [x] Header normalization (`X-Forwarded-For/Proto/Host`, hop-by-hop header stripping)
+- HTTP/2 server-side: not implemented (typically handled by edge LB in front of proxy)
 
 ---
 

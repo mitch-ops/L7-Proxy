@@ -22,6 +22,10 @@ pub struct ServerConfig {
     pub rate_limit: Option<RateLimitConfig>,
     #[serde(default = "default_drain_timeout_secs")]
     pub drain_timeout_secs: u64,
+    #[serde(default = "default_pool_idle_timeout_secs")]
+    pub pool_idle_timeout_secs: u64,
+    #[serde(default = "default_pool_max_idle_per_host")]
+    pub pool_max_idle_per_host: usize,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -78,6 +82,14 @@ fn default_overall_timeout_secs() -> u64 {
 
 fn default_drain_timeout_secs() -> u64 {
     30
+}
+
+fn default_pool_idle_timeout_secs() -> u64 {
+    90
+}
+
+fn default_pool_max_idle_per_host() -> usize {
+    32
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]

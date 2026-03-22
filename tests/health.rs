@@ -59,6 +59,8 @@ async fn unhealthy_upstream_is_skipped() {
             overall_timeout_secs: 30,
             rate_limit: None,
             drain_timeout_secs: 30,
+            pool_idle_timeout_secs: 90,
+            pool_max_idle_per_host: 32,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
@@ -158,6 +160,8 @@ async fn active_health_check_marks_upstream_unhealthy() {
             overall_timeout_secs: 30,
             rate_limit: None,
             drain_timeout_secs: 30,
+            pool_idle_timeout_secs: 90,
+            pool_max_idle_per_host: 32,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),

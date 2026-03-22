@@ -42,6 +42,8 @@ async fn rate_limit_returns_429_when_exceeded() {
             metrics_bind: None,
             overall_timeout_secs: 30,
             drain_timeout_secs: 30,
+            pool_idle_timeout_secs: 90,
+            pool_max_idle_per_host: 32,
             rate_limit: Some(RateLimitConfig {
                 requests_per_second: 2.0,
                 burst_size: 2,

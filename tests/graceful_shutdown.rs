@@ -45,6 +45,8 @@ async fn graceful_shutdown_completes_in_flight_request() {
             overall_timeout_secs: 30,
             rate_limit: None,
             drain_timeout_secs: 5, // 5s drain — plenty for the 1s upstream
+            pool_idle_timeout_secs: 90,
+            pool_max_idle_per_host: 32,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),

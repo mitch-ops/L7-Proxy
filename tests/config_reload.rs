@@ -47,6 +47,8 @@ fn make_config(upstreams: Vec<String>) -> Config {
             overall_timeout_secs: 30,
             rate_limit: None,
             drain_timeout_secs: 30,
+            pool_idle_timeout_secs: 90,
+            pool_max_idle_per_host: 32,
         },
         routes: vec![RouteConfig {
             prefix: "/".to_string(),
@@ -69,7 +71,8 @@ fn build_state(config: Config) -> Arc<AppState> {
         .collect();
 
     let router = Arc::new(ProxyRouter::new(routes));
-    let client = hyper::Client::new();
+    let https = hyper_tls::HttpsConnector::new();
+    let client = hyper::Client::builder().build(https);
     let health = Arc::new(HealthTracker::new(
         config.server.failure_threshold,
         Duration::from_secs(config.server.health_cooldown_secs),

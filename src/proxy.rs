@@ -1,20 +1,40 @@
 use crate::errors::ProxyError;
+use crate::middleware::RemoteAddr;
 use crate::state::AppState;
-use hyper::client::HttpConnector;
-use hyper::header::HeaderName;
-use hyper::{Body, Client, Request, Response, Uri};
+use hyper::header::{HeaderName, HeaderValue};
+use hyper::{Body, Request, Response, Uri};
 use rand::RngExt;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::{Duration, sleep, timeout};
 use tracing::info;
+
+/// Hop-by-hop headers that must not be forwarded to upstreams or back to clients.
+const HOP_BY_HOP_HEADERS: &[&str] = &[
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+];
+
+fn strip_hop_by_hop_headers(headers: &mut hyper::HeaderMap) {
+    for name in HOP_BY_HOP_HEADERS {
+        headers.remove(*name);
+    }
+}
 
 async fn forward_once(
     mut req: Request<Body>,
     upstream: &str,
     final_path: &str,
     request_id: &str,
-    client: &Client<HttpConnector>,
+    client_ip: Option<IpAddr>,
+    state: &AppState,
     request_timeout: Duration,
 ) -> Result<Response<Body>, ProxyError> {
     let new_uri = format!("{}{}", upstream, final_path);
@@ -23,17 +43,62 @@ async fn forward_once(
         .parse::<Uri>()
         .map_err(|_| ProxyError::UpstreamFailure)?;
 
+    // Save original host before overwriting URI
+    let original_host = req
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
     *req.uri_mut() = parsed;
+
+    // --- Header normalization ---
 
     req.headers_mut().insert(
         HeaderName::from_static("x-request-id"),
         request_id.parse().unwrap(),
     );
 
-    let upstream_call = client.request(req);
+    // X-Forwarded-For: append client IP
+    if let Some(ip) = client_ip {
+        let forwarded_for = match req.headers().get("x-forwarded-for") {
+            Some(existing) => {
+                let existing_str = existing.to_str().unwrap_or("");
+                format!("{}, {}", existing_str, ip)
+            }
+            None => ip.to_string(),
+        };
+        req.headers_mut().insert(
+            HeaderName::from_static("x-forwarded-for"),
+            HeaderValue::from_str(&forwarded_for).unwrap(),
+        );
+    }
+
+    // X-Forwarded-Proto
+    req.headers_mut().insert(
+        HeaderName::from_static("x-forwarded-proto"),
+        HeaderValue::from_static("http"),
+    );
+
+    // X-Forwarded-Host: original Host header
+    if let Some(host) = original_host {
+        if let Ok(val) = HeaderValue::from_str(&host) {
+            req.headers_mut()
+                .insert(HeaderName::from_static("x-forwarded-host"), val);
+        }
+    }
+
+    // Strip hop-by-hop headers from the outgoing request
+    strip_hop_by_hop_headers(req.headers_mut());
+
+    let upstream_call = state.client.request(req);
 
     match timeout(request_timeout, upstream_call).await {
-        Ok(Ok(resp)) => Ok(resp),
+        Ok(Ok(mut resp)) => {
+            // Strip hop-by-hop headers from the upstream response
+            strip_hop_by_hop_headers(resp.headers_mut());
+            Ok(resp)
+        }
         Ok(Err(_)) => Err(ProxyError::UpstreamFailure),
         Err(_) => Err(ProxyError::UpstreamTimeout),
     }
@@ -48,6 +113,7 @@ pub async fn proxy_request(
     let method = req.method().clone();
     let method_str = method.to_string();
     let request_id = uuid::Uuid::new_v4().to_string();
+    let client_ip = req.extensions().get::<RemoteAddr>().map(|r| r.0);
 
     // Load current config and router (snapshot for this request)
     let config = state.config.load();
@@ -190,7 +256,8 @@ pub async fn proxy_request(
             selected_upstream,
             &final_path,
             &request_id,
-            &state.client,
+            client_ip,
+            &state,
             request_timeout,
         )
         .await;

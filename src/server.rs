@@ -140,6 +140,8 @@ pub async fn start_proxy_for_test() -> std::net::SocketAddr {
             overall_timeout_secs: 30,
             rate_limit: None,
             drain_timeout_secs: 30,
+            pool_idle_timeout_secs: 90,
+            pool_max_idle_per_host: 32,
         },
         routes: vec![crate::config::RouteConfig {
             prefix: "/".to_string(),
@@ -171,7 +173,11 @@ async fn build_proxy(config: Config) -> (Arc<AppState>, tokio::net::TcpListener)
         .collect();
 
     let router = Arc::new(crate::router::Router::new(routes));
-    let client = hyper::Client::new();
+    let https = hyper_tls::HttpsConnector::new();
+    let client = hyper::Client::builder()
+        .pool_idle_timeout(std::time::Duration::from_secs(config.server.pool_idle_timeout_secs))
+        .pool_max_idle_per_host(config.server.pool_max_idle_per_host)
+        .build(https);
 
     let health = Arc::new(crate::health::HealthTracker::new(
         config.server.failure_threshold,

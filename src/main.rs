@@ -16,8 +16,6 @@ mod server;
 use arc_swap::ArcSwap;
 use balancer::create_balancer;
 use config::Config;
-use hyper::client::HttpConnector;
-use hyper::{Body, Client};
 use router::{Route, Router};
 use std::fs;
 use std::sync::Arc;
@@ -50,7 +48,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting HTTP server on {}", addr);
 
-    let client: Client<HttpConnector, Body> = Client::new();
+    let https = hyper_tls::HttpsConnector::new();
+    let client = hyper::Client::builder()
+        .pool_idle_timeout(std::time::Duration::from_secs(config.server.pool_idle_timeout_secs))
+        .pool_max_idle_per_host(config.server.pool_max_idle_per_host)
+        .build(https);
 
     let health = Arc::new(health::HealthTracker::new(
         config.server.failure_threshold,
