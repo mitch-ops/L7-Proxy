@@ -106,7 +106,7 @@ pub async fn proxy_request(
         .map_err(|_| ProxyError::UpstreamFailure)?;
 
     let mut last_error = None;
-    let start_index = route.balancer.next_index(upstream_count);
+    let start_index = route.balancer.next_index_for_key(upstream_count, &path);
 
     // If all upstreams are unhealthy, ignore health status (fallback to current behavior)
     let any_healthy = route.upstreams.iter().any(|u| state.health.is_healthy(u));

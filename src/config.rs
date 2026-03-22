@@ -87,6 +87,7 @@ pub enum BalancerStrategy {
     RoundRobin,
     LeastConnections,
     WeightedRoundRobin,
+    ConsistentHash,
 }
 
 #[derive(Debug, Deserialize, Clone)]

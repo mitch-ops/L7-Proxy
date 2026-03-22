@@ -146,3 +146,70 @@ async fn least_connections_balances_load() {
     // The important thing is the strategy works without errors.
     assert_eq!(a_count + b_count, 10, "all requests should succeed");
 }
+
+#[tokio::test]
+async fn consistent_hash_routes_same_path_to_same_upstream() {
+    let addr_a = SocketAddr::from(([127, 0, 0, 1], 9905));
+    let addr_b = SocketAddr::from(([127, 0, 0, 1], 9906));
+
+    task::spawn(start_upstream(
+        addr_a,
+        Router::new()
+            .route("/foo", get(handler_a))
+            .route("/bar", get(handler_a)),
+    ));
+    task::spawn(start_upstream(
+        addr_b,
+        Router::new()
+            .route("/foo", get(handler_b))
+            .route("/bar", get(handler_b)),
+    ));
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let config = make_config(
+        vec![format!("http://{}", addr_a), format!("http://{}", addr_b)],
+        BalancerStrategy::ConsistentHash,
+        None,
+    );
+
+    let proxy_addr = start_proxy_with_config(config).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Send multiple requests to /foo — all should go to the same upstream
+    let mut foo_responses: Vec<String> = Vec::new();
+    for _ in 0..5 {
+        let body = reqwest::get(format!("http://{}/foo", proxy_addr))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        foo_responses.push(body);
+    }
+
+    // All /foo requests should hit the same server
+    assert!(
+        foo_responses.iter().all(|r| r == &foo_responses[0]),
+        "consistent hashing should route /foo to the same upstream every time, got: {:?}",
+        foo_responses
+    );
+
+    // Send multiple requests to /bar — all should go to the same upstream
+    let mut bar_responses: Vec<String> = Vec::new();
+    for _ in 0..5 {
+        let body = reqwest::get(format!("http://{}/bar", proxy_addr))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        bar_responses.push(body);
+    }
+
+    assert!(
+        bar_responses.iter().all(|r| r == &bar_responses[0]),
+        "consistent hashing should route /bar to the same upstream every time, got: {:?}",
+        bar_responses
+    );
+}

@@ -208,7 +208,7 @@ YAML-based configuration:
 - [x] Weighted round robin (expanded schedule from weights, e.g. [3,1] → [A,A,A,B])
 - [x] Per-route strategy selection via config (`strategy` + `weights` on route)
 - [x] `create_balancer` factory function
-- [ ] Consistent hashing
+- [x] Consistent hashing (hash ring with 150 virtual nodes, routes by request path)
 
 ---
 

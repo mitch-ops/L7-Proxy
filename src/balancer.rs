@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::config::BalancerStrategy;
@@ -6,6 +7,12 @@ use crate::config::BalancerStrategy;
 pub trait LoadBalancer: Send + Sync {
     /// Pick the next upstream index to use.
     fn next_index(&self, pool_size: usize) -> usize;
+
+    /// Pick the next upstream index based on a request key (e.g., path).
+    /// Defaults to ignoring the key and calling `next_index`.
+    fn next_index_for_key(&self, pool_size: usize, _key: &str) -> usize {
+        self.next_index(pool_size)
+    }
 
     /// Record that a request started on this upstream (for connection tracking).
     fn record_start(&self, _index: usize) {}
@@ -106,6 +113,56 @@ impl LoadBalancer for WeightedRoundRobin {
     }
 }
 
+// --- Consistent Hashing ---
+
+fn hash_key(key: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    hasher.finish()
+}
+
+pub struct ConsistentHash {
+    /// Sorted ring of (hash_value, upstream_index) pairs.
+    ring: Vec<(u64, usize)>,
+}
+
+impl ConsistentHash {
+    pub fn new(pool_size: usize, replicas: usize) -> Self {
+        let mut ring = Vec::with_capacity(pool_size * replicas);
+        for i in 0..pool_size {
+            for r in 0..replicas {
+                let vnode_key = format!("{}:{}", i, r);
+                let hash = hash_key(&vnode_key);
+                ring.push((hash, i));
+            }
+        }
+        ring.sort_by_key(|&(h, _)| h);
+        Self { ring }
+    }
+}
+
+impl LoadBalancer for ConsistentHash {
+    fn next_index(&self, _pool_size: usize) -> usize {
+        // Fallback for callers that don't provide a key
+        0
+    }
+
+    fn next_index_for_key(&self, _pool_size: usize, key: &str) -> usize {
+        let hash = hash_key(key);
+        // Binary search for the first ring entry >= hash
+        match self.ring.binary_search_by_key(&hash, |&(h, _)| h) {
+            Ok(pos) => self.ring[pos].1,
+            Err(pos) => {
+                if pos >= self.ring.len() {
+                    self.ring[0].1 // Wrap around
+                } else {
+                    self.ring[pos].1
+                }
+            }
+        }
+    }
+}
+
 // --- Factory ---
 
 pub fn create_balancer(
@@ -121,5 +178,6 @@ pub fn create_balancer(
             let w = weights.unwrap_or(&default_weights);
             Box::new(WeightedRoundRobin::new(w.to_vec()))
         }
+        BalancerStrategy::ConsistentHash => Box::new(ConsistentHash::new(pool_size, 150)),
     }
 }
