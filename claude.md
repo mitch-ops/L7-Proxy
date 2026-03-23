@@ -115,6 +115,11 @@ YAML-based configuration:
 - [x] Ephemeral port binding (no hardcoded ports)
 - [x] End-to-end retry validation
 
+### Performance Testing
+- [x] Criterion micro-benchmarks (router matching, all load balancer strategies)
+- [x] Shell-based load testing with wrk/hey (5 scenarios across all balancer strategies)
+- [x] Mock upstream binary (configurable delay, body size, failure rate)
+
 ---
 
 ## Current Limitations
@@ -220,6 +225,16 @@ YAML-based configuration:
 
 ---
 
+### 11. Performance Testing ✅
+- [x] Criterion benchmarks for `Router::match_route` (few/many routes, no match, deep prefix)
+- [x] Criterion benchmarks for all `LoadBalancer` impls (RR, LC, WRR, consistent hash at various pool sizes)
+- [x] Mock upstream binary (`mock-upstream`) with configurable delay, body size, failure rate
+- [x] Shell load test script (`scripts/load_test.sh`) with 5 scenarios (baseline, multi-RR, WRR, LC, consistent hash)
+- [x] Supports both `wrk` and `hey` (auto-detects)
+- [x] wrk Lua script for varied paths in consistent hash scenario
+
+---
+
 ## Design Principles
 
 - No unnecessary abstractions early
@@ -236,6 +251,8 @@ YAML-based configuration:
 - No mocks for core request flow
 - Use ephemeral ports (port 0)
 - Validate full request lifecycle
+- Criterion micro-benchmarks for hot path functions (`cargo bench`)
+- Shell-based load testing for full proxy throughput (`scripts/load_test.sh`)
 
 ---
 

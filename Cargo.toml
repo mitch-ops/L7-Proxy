@@ -18,3 +18,18 @@ prometheus = "0.13"
 tower = { version = "0.4", features = ["util"] }
 arc-swap = "1"
 hyper-tls = "0.5"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "router_bench"
+harness = false
+
+[[bench]]
+name = "balancer_bench"
+harness = false
+
+[[bin]]
+name = "mock-upstream"
+path = "src/bin/mock_upstream.rs"

@@ -1,0 +1,15 @@
+server:
+  bind: "127.0.0.1:8080"
+  request_timeout_secs: 5
+  max_retries: 0
+  overall_timeout_secs: 30
+  drain_timeout_secs: 5
+
+routes:
+  - prefix: "/api"
+    upstream:
+      - "http://127.0.0.1:10001"
+      - "http://127.0.0.1:10002"
+      - "http://127.0.0.1:10003"
+    strategy: weighted_round_robin
+    weights: [5, 3, 2]
