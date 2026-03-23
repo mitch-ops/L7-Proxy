@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rust-proxy-config
+  labels:
+    app: rust-proxy
+data:
+  config.yaml: |
+    server:
+      bind: "0.0.0.0:8080"
+      request_timeout_secs: 5
+      max_retries: 2
+      metrics_bind: "0.0.0.0:9090"
+      drain_timeout_secs: 30
+      overall_timeout_secs: 30
+      failure_threshold: 3
+      health_cooldown_secs: 30
+      health_check:
+        path: "/health"
+        interval_secs: 10
+        timeout_secs: 3
+      # rate_limit:
+      #   requests_per_second: 100.0
+      #   burst_size: 200
+
+    routes:
+      - prefix: "/api"
+        upstream:
+          - "http://backend-svc.default.svc.cluster.local:8080"
+        strategy: round_robin

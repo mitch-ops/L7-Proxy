@@ -1,0 +1,7 @@
+target/
+.git/
+.claude/
+scripts/
+tests/
+*.md
+config.yaml
